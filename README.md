@@ -1,124 +1,198 @@
-# Approid Desk
+<div align="center">
 
-Laravel 13, Livewire 4, Tailwind CSS와 Laravel Sail로 구성한 개발 환경입니다.
+# APPROID Desk
 
-## 요구 사항
+**고객 요청을 견적, 승인, 작업, 시간 정산, 완료까지 연결하는 운영 워크스페이스**
 
-- Docker Desktop
-- Node.js 24 이상
+[![Laravel 13](https://img.shields.io/badge/Laravel-13-FF2D20?logo=laravel&logoColor=white)](https://laravel.com)
+[![PHP 8.4](https://img.shields.io/badge/PHP-8.4-777BB4?logo=php&logoColor=white)](https://www.php.net)
+[![Livewire 4](https://img.shields.io/badge/Livewire-4-FB70A9?logo=livewire&logoColor=white)](https://livewire.laravel.com)
+[![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com)
+[![Production](https://img.shields.io/badge/production-desk.approid.team-059669)](https://desk.approid.team)
 
-PHP와 MySQL은 호스트에 별도로 설치하지 않습니다. Docker에서 PHP 8.4와 MySQL 8.4를 실행합니다.
+[운영 서비스](https://desk.approid.team) · [구현 로드맵](docs/implementation-process.md) · [배포 가이드](docs/deployment.md)
 
-## 처음 실행
+</div>
 
-```powershell
-npm ci
-npm run build
-docker compose build
-docker compose up -d mysql laravel.test
-docker compose exec laravel.test php artisan migrate
-docker compose up -d
-docker compose exec laravel.test php artisan test
+---
+
+APPROID Desk는 개발·유지보수 요청을 단순 티켓이 아닌 **계약과 시간이 연결된 업무 기록**으로 다룬다. 고객은 자신의 회사 자료만 보고 견적과 검수를 승인하며, 운영자는 작업 상태·실사용 시간·알림·장애 대응 이력을 하나의 흐름에서 관리한다.
+
+## 핵심 흐름
+
+```mermaid
+flowchart LR
+    A["요청 접수"] --> B["견적 작성"]
+    B --> C{"고객 승인"}
+    C -->|"승인"| D["시간 예약"]
+    C -->|"수정 요청"| B
+    D --> E["계약 확인·작업"]
+    E --> F["실사용 시간 확정"]
+    F --> G["고객 검수"]
+    G --> H["완료·잔여 예약 반환"]
+    H --> I["월 사용내역·CSV"]
 ```
 
-서비스는 <http://localhost:8000>에서 확인할 수 있습니다. Queue 워커, Scheduler 워커와 ClamAV는 `docker compose up`으로 함께 실행됩니다.
+180분 견적을 승인하고 150분을 사용한 기준 시나리오에서는 예약 180분, 순사용 150분, 반환 30분이 불변 원장으로 재현된다.
 
-## 자주 쓰는 명령
+## 주요 기능
 
-```powershell
+| 영역 | 제공 기능 |
+| --- | --- |
+| 고객사 분리 | 회사별 요청·견적·작업·시간 데이터 격리, 서버 Gate·Policy·쿼리 범위 이중 검사 |
+| 요청과 견적 | 요청 접수, 담당자·상태 이력, 견적 버전, 고객 승인·수정 요청 |
+| 계약 시간 | 제공·예약·실사용·반환·조정을 정수 분 단위의 불변 원장으로 관리 |
+| 작업과 검수 | 작업기록 임시저장·확정, 차감·비차감 구분, 고객 검수, 취소·재작업 흐름 |
+| 월 정산 | 계약별 월 현황, 사용내역·원장 CSV, 월 마감, 마감 후 조정 이력 |
+| 알림 | DB·SMTP 큐 알림, 주간 보고, 중복 방지, 재시도·최종 실패 관리 |
+| 주요 장애 | 1시간 내부 응답 목표, 대응·고객 협의·복구·롤백의 불변 이력 |
+| 첨부 보안 | 비공개 저장, MIME·크기·개수 제한, SHA-256 무결성, ClamAV 검사, 권한 기반 다운로드 |
+| 반응형 운영 UI | 역할별 대시보드, 데스크톱·태블릿·모바일, 라이트·다크 테마 |
+
+> 첨부 보안 도메인과 다운로드는 구현되었으며, HTTP 업로드·목록·삭제 화면은 후속 범위다.
+
+## 역할과 권한
+
+| 역할 | 주요 권한 |
+| --- | --- |
+| 최고 관리자 | 전체 고객사·운영 설정·월 마감·조정·알림 재시도 |
+| 운영자 | 고객사·프로젝트·요청·견적·작업·시간 운영 |
+| 고객사 관리자 | 자사 견적 승인, 검수 완료, 월 사용내역, 자사 사용자 관리 |
+| 고객사 일반 사용자 | 자사 요청·댓글·제출 견적 조회 |
+
+일반 사용자는 견적을 볼 수 있지만 승인할 수 없고, 고객사 계정은 다른 회사의 URL을 직접 요청해도 접근할 수 없다.
+
+## 기술 구성
+
+```text
+Browser
+  └─ Laravel 13 + Livewire 4 + Blade + Flux UI + Tailwind CSS 4
+       ├─ MySQL 8.4            계약·업무·불변 감사 데이터
+       ├─ Database Queue      알림·악성 파일 검사
+       ├─ Laravel Scheduler   월 전환·주간 보고·heartbeat
+       ├─ Private Storage     권한 기반 첨부파일
+       └─ ClamAV 1.4          스트리밍 악성 파일 검사
+
+Production
+  └─ Cloudflare Tunnel → 127.0.0.1:8080 → Nginx + PHP-FPM
+```
+
+PHP 8.4, Vite 8, PHPUnit 12, Laravel Pint, Larastan을 사용한다. 운영 앱·Queue·Scheduler는 하나의 관리된 이미지로 실행하고 MySQL·ClamAV·Tunnel은 별도 컨테이너로 분리한다.
+
+## 빠른 시작
+
+### 준비물
+
+- Docker Engine 또는 Docker Desktop
+- Docker Compose v2
+- Git
+
+로컬 PHP·Composer·MySQL은 필수가 아니다. 아래 명령은 Linux/WSL의 Bash를 기준으로 한다.
+
+### 설치
+
+```bash
+git clone https://github.com/imorangepie20/approid-desk.git
+cd approid-desk
+cp .env.example .env
+
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD:/var/www/html" -w /var/www/html laravelsail/php84-composer:latest \
+  composer install --ignore-platform-reqs --no-interaction
+
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD:/app" -w /app node:24-bookworm-slim \
+  sh -lc 'npm ci && npm run build'
+
+docker compose build
+docker compose up -d --wait mysql clamav
+docker compose run --rm laravel.test php artisan key:generate
+docker compose run --rm laravel.test php artisan migrate
+docker compose up -d
+```
+
+| 서비스 | 주소 |
+| --- | --- |
+| 앱 | <http://localhost:8000> |
+| MySQL | `127.0.0.1:3307` |
+| Vite | `127.0.0.1:5173` |
+
+로컬 메일은 기본적으로 로그에 남고, Queue·Scheduler·ClamAV는 `docker compose up -d`에 함께 실행된다.
+
+### 초기 관리자
+
+```bash
+docker compose exec laravel.test php artisan desk:create-initial-admin
+```
+
+계정이 하나도 없을 때만 실행된다. 일반 사용자는 공개 가입이 아닌 초대 흐름으로 등록한다.
+
+## 개발 명령
+
+```bash
+# 상태와 로그
 docker compose ps
-docker compose logs -f laravel.test
-docker compose exec laravel.test php artisan migrate
-docker compose exec laravel.test php artisan test
-docker compose exec clamav clamdscan --ping 5
+docker compose logs -f laravel.test queue scheduler
+
+# DB 마이그레이션
+docker compose exec -T laravel.test php artisan migrate
+
+# 코드 품질과 전체 회귀
+docker compose exec -T laravel.test composer test
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD:/app" -w /app node:24-bookworm-slim npm run build
+
+# 운영 프로세스 확인
+docker compose exec -T laravel.test php artisan desk:check-scheduler
+docker compose exec -T laravel.test php artisan schedule:list
+docker compose exec -T clamav clamdscan --ping 5
+
+# 종료
 docker compose down
 ```
 
-MySQL은 호스트의 `3307` 포트에 연결됩니다. 애플리케이션 내부에서는 `mysql:3306`을 사용합니다.
+2026-10-04 기준 전체 회귀 **802개 테스트·5,085단언**, Pint **345파일**, PHPStan **242파일·오류 0건**, 프런트 빌드 **22모듈**을 통과했다. 동시성 검사는 독립 PHP 프로세스와 실제 MySQL 잠금을 사용하므로 전체 회귀에 시간이 걸릴 수 있다.
 
-## 첨부파일 개발 상태
+## 데모 시나리오
 
-4.1~4.8에서는 첨부파일의 업무 자료 연결, 파일 정보 저장, 유형 허용 목록 검사, 용량·개수 제한, 비공개 저장, 권한 기반 다운로드, 삭제 이력, 악성 파일 검사와 논리적 격리를 구현했습니다. `Attachment`는 고객사·요청에 반드시 속하며, 요청 자체 또는 그 요청의 댓글·견적 버전 중 하나에 연결됩니다. `CreateAttachmentLink`는 최신 사용자와 대상 자료를 검사하고 고객사·요청 ID를 서버에서 결정합니다. 요청 첨부는 댓글 작성 권한을, 댓글 첨부는 본인 작성 여부를 추가로 확인하고 견적 첨부는 운영자의 초안 작성 권한을 검사합니다.
+활성 시스템 계정이 하나인 개발 DB에서 다음 명령으로 전체 업무 흐름을 반복 실행할 수 있다.
 
-고객 조회에는 `Attachment::visibleTo($user)` 또는 관계 쿼리의 `visibleTo($user)`와 `AttachmentPolicy`를 적용합니다. 미제출 견적의 첨부 기록은 고객에게 공개하지 않습니다. 연결 대상은 변경할 수 없으며, 견적 제출 후 첨부 기록 추가·삭제도 DB에서 차단합니다. 일반 `attachments()` 관계는 고객 권한 필터를 자동 적용하지 않습니다.
+```bash
+docker compose exec -T laravel.test php artisan desk:create-customer-a-demo-request
+docker compose exec -T laravel.test php artisan desk:submit-customer-a-demo-estimate
+docker compose exec -T laravel.test php artisan desk:verify-customer-a-demo-user-approval-block
+docker compose exec -T laravel.test php artisan desk:run-customer-a-demo all
+```
 
-`RegisterAttachment`는 업로드 파일 객체에서 원본 이름·실제 바이트 수·서버 감지 MIME 유형과 SHA-256을 구하고, 처리자 ID와 등록 시각을 저장합니다. 클라이언트의 MIME 선언은 신뢰하지 않습니다. 파일 정보 등록 실패 시 연결도 롤백하며, 등록 후 원본 정보·업로더·내용 해시 변경은 모델과 DB에서 차단합니다. 기존 정보 없는 연결은 모두 NULL과 검사 대기로 보존하며 임의의 파일 정보나 업로더를 채우지 않습니다. 제출된 견적의 기존 빈 연결에 뒤늦게 파일 정보를 채우는 것도 금지합니다. 등록 트랜잭션이 커밋되면 악성 파일 검사 작업을 데이터베이스 큐로 발송합니다.
-
-`config/attachments.php`의 허용 목록은 PDF(`application/pdf`), PNG(`image/png`), JPG/JPEG(`image/jpeg`), TXT(`text/plain`), CSV(`text/plain` 또는 `text/csv`)입니다. `AttachmentFileTypeRules`는 원본 이름의 마지막 확장자와 서버 감지 MIME을 함께 검사합니다. 대문자 확장자는 허용하고 형식 불일치·확장자 누락·미지원 유형·빈/잘못된 허용 목록은 거부하며 연결도 롤백합니다. Office 문서·압축파일·SVG·HTML·실행파일 확장자는 지원하지 않습니다. 설정 변경은 새 등록에 적용하며 기존 기록을 임의로 바꾸지 않습니다.
-
-`config/attachments.php`의 `max_file_bytes`는 기본 10 MiB(10,485,760바이트), `max_per_request`는 업무 요청당 20개입니다. 양의 정수만 허용하며 잘못된 설정은 등록을 차단합니다. 실제 파일 크기가 한도와 같으면 허용하고 초과하면 연결 생성까지 롤백합니다. 요청 본문·댓글·모든 견적 버전의 첨부를 합산하며 고객에게 숨겨진 초안, 검사 상태와 무관한 파일, 기존 빈 연결도 개수에 포함합니다. `CreateAttachmentLink`에도 개수 제한을 적용하고 요청 행 잠금과 최신 첨부 잠금 조회로 동시 등록을 직렬화합니다. 제한을 줄여도 기존 자료를 삭제하거나 변경하지 않습니다. 이는 등록 액션의 정책이며 직접 SQL에 대한 용량·개수 제약은 아닙니다. HTTP 업로드 도입 시 웹 서버/PHP의 전송 용량 제한도 별도 설정해야 합니다.
-
-`ATTACHMENT_DISK`의 기본값은 공개 링크 밖의 전용 `attachments` 디스크이며 로컬 루트는 `storage/app/private/attachments`입니다. 설정된 디스크가 명시적으로 `private`가 아니면 등록하지 않습니다. 파일은 원본 이름과 확장자를 경로에 쓰지 않고 256비트 난수 키와 2단계 접두 디렉터리로 저장하며, DB에는 저장 디스크·경로를 한 쌍으로 기록합니다. 경로는 고유하고 등록 후 변경할 수 없습니다. 저장 실패는 연결을 롤백하고, 저장 뒤 DB 실패가 발생하면 생성 파일의 보상 삭제를 시도하며 삭제 실패는 애플리케이션 오류 보고 경로에 남깁니다. 4.5 이전의 파일 없는 연결과 과거 메타데이터 행은 저장 경로를 임의로 만들지 않고 NULL로 보존합니다.
-
-`attachments.download`는 로그인·이메일 확인 뒤 `AttachmentPolicy::view`를 적용하므로 타 고객사 자료와 고객에게 비공개인 미제출 견적 첨부를 내려받을 수 없습니다. 안전 검사가 완료된 `clean` 파일만 허용하고 `pending`, `scanning`, `infected`, `failed`는 409로 차단합니다. 사용자별 분당 10회와 IP별 시간당 100회 제한을 함께 적용합니다. 응답은 `application/octet-stream`, `attachment`, `private, no-store`, `nosniff`로 제공하고 한글 원본명은 `filename*`에, ASCII 대체명은 `attachment-{ID}.{확장자}`에 넣습니다. 저장 경로 형식·비공개 디스크·파일 존재와 현재 크기·SHA-256을 다시 확인하며 유실·변조 의심·저장소 오류는 경로를 노출하지 않고 503으로 응답합니다.
-
-`DeleteAttachment`는 삭제 사유를 요구하고 파일 내용만 제거하며 첨부 행과 원본 메타데이터는 감사용으로 보존합니다. 삭제 상태는 `active`, `pending`, `deleted`, `failed`이고 각 시도는 UUID와 `requested`, `succeeded`, `failed` 불변 이력을 남깁니다. 저장소 삭제는 DB 트랜잭션 밖에서 수행하며 실패 상태를 안전한 코드로 기록해 재시도할 수 있습니다. 5분 넘게 중단된 처리는 새 시도로 복구하고, 이미 사라진 파일은 성공으로 마무리합니다. 삭제 이력 조회도 첨부 가시성에 따르므로 고객에게 숨겨진 미제출 견적 자료의 이력은 노출하지 않습니다. 제출 견적 첨부와 검사 중인 첨부는 삭제할 수 없고 초안 견적 첨부의 삭제가 처리 중이거나 실패하면 제출할 수 없습니다. 삭제 완료 첨부는 요청별 개수 제한에서 제외되고 다운로드는 410으로 응답합니다. 현재 삭제 HTTP 경로와 첨부 목록·삭제 화면은 제공하지 않습니다.
-
-`ScanAttachment`는 `InspectAttachment`를 통해 비공개 파일 바이트를 ClamAV에 스트리밍합니다. 검사 상태는 `pending`, `scanning`, `clean`, `infected`, `failed`이고 시도별 UUID와 `requested`, `clean`, `infected`, `failed` 불변 이력을 남깁니다. 실패와 5분 넘게 중단된 검사는 새 시도로 복구할 수 있지만 `infected`는 자동으로 해제하지 않습니다. 검사 작업은 최대 3회, 실행 제한 60초, 재시도 대기 60초·300초로 처리됩니다. 활성 파일이 붙은 견적은 모든 첨부가 `clean`이어야 제출할 수 있으며 삭제 완료 기록은 이 검사에서 제외합니다.
-
-ClamAV는 `clamav/clamav:1.4` 컨테이너로 실행하며 호스트에 TCP 포트를 공개하지 않습니다. 앱은 Compose 내부 네트워크의 ClamD `INSTREAM` 프로토콜을 사용하므로 저장소 경로를 검사 컨테이너와 공유하지 않습니다. 바이러스 서명 데이터는 `clamav-data` 볼륨에 보존되고 컨테이너의 FreshClam이 갱신합니다. `docker compose up -d --wait clamav queue`로 검사기와 워커를 시작하고 `docker compose exec clamav clamdscan --ping 5`로 준비 상태를 확인합니다. 운영 배포에서도 ClamD TCP 포트를 외부에 공개하지 않아야 합니다.
-
-논리적 격리는 비정상 파일을 별도 디렉터리로 이동하는 방식이 아니라, 임의 이름의 비공개 저장소에 그대로 둔 채 `clean` 이외의 모든 상태에서 다운로드를 거부하는 방식입니다. 등록·검사·다운로드 때 SHA-256을 비교하므로 크기가 같은 내용 변경도 차단합니다. 감염 파일은 명시적으로 삭제할 때만 저장소에서 제거합니다.
-
-유형 일치와 악성 코드 검사도 파일 전체의 구조적 유효성이나 완전한 무해함을 보장하지 않습니다. 특히 PDF 내부 동작, 복합 형식 파일, CSV 수식 등의 별도 안전성 검사를 대신하지 않으며 오탐·미탐 가능성을 운영 절차에서 고려해야 합니다. HTTP 업로드 경로와 첨부파일 목록·삭제 화면은 아직 제공하지 않습니다.
-
-## 업무 알림 개발 상태
-
-업무 알림의 안정적인 영문 타입, 한글 라벨, 수신 그룹, 중요도와 기본 채널은 `NotificationType` 및 관련 enum으로 정의했습니다. 일반 요청·긴급 요청·주요 장애 대응·롤백 기록·담당자·댓글, 견적 제출·승인·수정 요청, 작업 시작·보류·재개, 검수 요청·완료, 취소, 월 전환, 첨부 감염·검사 실패와 주간 보고를 포함합니다. 전체 표와 수신자 해석·보안 규칙은 `docs/notification-catalog.md`에 있습니다.
-
-모든 타입은 데이터베이스 알림을 기본으로 하며 중요·긴급 알림과 주간 보고는 메일도 기본 채널로 정의합니다. 요청 생성부터 댓글, 견적, 상태 전환, 첨부 검사와 월 전환까지 공통 수신자 조회와 발송기에 연결되어 있고 각 채널은 업무 트랜잭션 커밋 뒤 큐에서 처리됩니다. 큐 실행 시 최신 활성 상태와 자료 조회 권한을 다시 검사하며 허용된 최소 식별자만 데이터베이스와 메일에 사용합니다. 주간 진행 보고는 매주 월요일 09:15에 직전 달력 주간의 회사별 열린 요청 상태와 신규·상태 변경·완료 수를 불변 스냅샷으로 만들고, 운영 계정과 해당 고객사 관리자에게 DB·메일로 발송합니다. 같은 회사·주차의 재실행은 새 보고나 전달을 만들지 않습니다.
-
-업무 알림의 채널별 큐 작업은 최대 4회 시도하며 실패 뒤 60초, 300초, 900초 간격으로 재시도합니다. 개별 실행 제한은 30초이고 시간 초과도 실패로 처리합니다. 데이터베이스 큐의 `retry_after` 기본값은 90초로, 알림 작업과 60초 제한인 첨부 검사 작업보다 길어야 합니다. 전달 원장은 같은 사건·수신자·채널의 중복 예약과 성공 뒤 재실행을 차단하고 각 시도의 상태와 안전한 실패 분류를 기록합니다.
-
-운영자와 최고 관리자는 사이드바의 **알림 발송**에서 최종 실패 건을 확인하고 재시도할 수 있습니다. 재시도는 저장된 최소 페이로드와 수신자의 최신 접근 권한을 다시 검사하고 같은 전달 UUID를 사용하며, 요청자와 시각은 수정·삭제할 수 없는 감사 기록으로 남깁니다. 고객 역할과 비활성 계정은 이 화면과 실행 경로에 접근할 수 없습니다.
-
-운영 메일은 `MAIL_MAILER=smtp`와 홈서버의 실제 SMTP 연결 정보를 사용합니다. `MAIL_TIMEOUT`은 알림 작업 제한보다 짧게 유지하고, 587/STARTTLS는 `MAIL_SCHEME=null`, 465/암시적 TLS는 `MAIL_SCHEME=smtps`를 사용합니다. 로그 fallback은 실제 전달 실패를 성공으로 오인할 수 있어 운영 구성에 사용하지 않습니다.
-
-## 주요 업무 장애
-
-`is_urgent`가 설정되고 완료·취소되지 않은 요청을 현재의 주요 업무 장애로 취급합니다. 운영자와 고객 사용자의 대시보드 최상단에는 각자 조회할 수 있는 장애만 오래 접수된 순서로 표시하고, 요청 목록에서는 열린 주요 장애를 일반 요청보다 먼저 배치합니다. **주요 업무 장애만** 필터는 높은 우선순위 요청이나 완료된 과거 장애를 섞지 않고 현재 열린 장애만 조회합니다.
-
-주요 업무 장애의 내부 최초 응답 목표는 실제 요청 일시부터 연속 60분 뒤입니다. 대시보드·요청 목록·상세에서 목표 시각과 **목표 응답 대기**, **내부 목표 경과**, **내부 목표 이내 응답**, **내부 목표 이후 응답**, **응답 미기록** 상태를 표시합니다. 최초 응답이 등록되면 등록 시각이 아니라 실제 발생 시각으로 내부 목표 달성 여부를 확정합니다. 주말·공휴일·업무시간에 따른 정지는 적용하지 않으며, 대리 접수도 시스템 등록 시각이 아니라 실제 요청 일시를 기준으로 합니다.
-
-이 60분 값은 운영 우선순위를 관리하기 위한 내부 목표이며 계약상 응답시간 보장이 아닙니다. 서명된 서비스 계약이 요청에 연결되어도 Desk는 계약 문서의 별도 응답시간 약정을 자동 해석하거나 60분 목표를 약정으로 승격하지 않습니다. 구조화된 계약 약정과 명시적 승인 절차가 추가되기 전까지 응답시간 자동 약정은 항상 없음으로 처리합니다.
-
-운영자와 최고 관리자는 열린 주요 장애에 **최초 응답**, **대응 진행**, **고객 협의**, **복구 확인**을 실제 발생 시각과 함께 기록할 수 있습니다. 최초 응답은 요청당 한 건만 허용하고 요청 전 시각·미래 시각·완료 또는 취소된 요청의 새 기록은 거부합니다. 모든 장애 이력은 해당 요청을 볼 수 있는 고객에게도 공개되며 모델과 데이터베이스 트리거에서 수정·삭제를 막습니다. 고객 역할은 조회만 가능하고 기록할 수 없습니다.
-
-장애 대응 기록마다 해당 고객사 관리자와 요청 등록자에게 중요 알림을 DB·메일로 발송합니다. 알림에는 이력 ID와 일반 안내만 포함하고 대응 상세 내용, 고객 협의 원문, 응답시간 약속은 넣지 않습니다. 완료·취소 뒤에도 과거 장애 분류, 내부 응답 목표·상태와 전체 대응 이력을 보존하지만 현재 장애 패널과 전용 필터에서는 제외합니다.
+시스템 계정이 둘 이상이면 `--actor=operator@example.com`으로 작업자를 명시한다. 데모 명령은 멱등적이지만 운영 환경에서는 실제 데이터와 알림을 만들므로 백업과 `--force`가 필요하다.
 
 ## 운영 배포
 
-Zorin OS 홈서버, `desk.approid.team`, Cloudflare Tunnel을 위한 Docker 운영 구성과 절차는 `docs/deployment.md`에 있습니다. 웹은 호스트의 `127.0.0.1:8080`에만 바인딩하고 Nginx/PHP-FPM, Queue, Scheduler를 함께 감독하며 MySQL·첨부파일·ClamAV 서명은 별도 Docker 볼륨에 보존합니다.
+운영은 Zorin OS 홈서버의 Docker Compose와 Cloudflare Tunnel을 사용한다. 앱 포트는 `127.0.0.1:8080`에만 바인딩하고 MySQL·ClamAV는 외부에 공개하지 않는다.
 
-## 월 사용내역
-
-운영자·최고 관리자·고객사 관리자는 사이드바의 **월 사용내역** 또는 대시보드의 **월별 내역**에서 `/usage`로 이동합니다. 기준 월을 선택하고 계약을 열면 확정 작업 내역과 시간 원장을 조회할 수 있습니다. 운영자는 고객사 필터를 사용할 수 있고 고객사 관리자는 자사 계약만 조회합니다. 일반 사용자는 기존 대시보드의 자사 시간 요약을 조회합니다.
-
-고객 차감 합계에는 사용 취소를 반영하고, 사용 가능시간에는 조정 증가·감소까지 반영합니다. 고객에게는 차감 작업을 표시하며 비차감 작업·내부 사유·처리자 감사 정보는 운영자 화면에만 표시합니다.
-
-월 상세의 각 탭에서 **CSV 다운로드**를 사용할 수 있습니다. 선택한 월·계약의 사용내역 또는 원장을 페이지 제한 없이 내보내며, 원장은 선택한 발생 종류 필터를 유지합니다. CSV는 행 ID 내림차순이며 기준 월·고객사·계약 ID를 각 행에 포함합니다. 고객 다운로드도 자사 범위와 동일한 정보 공개 규칙을 적용하고, 취소된 작업의 고객 차감은 0분으로 표시합니다. 파일은 UTF-8 BOM과 CRLF 형식으로 스트리밍되며 서버에 저장하지 않습니다. 수식으로 해석될 수 있는 텍스트 셀에는 작은따옴표를 앞에 붙이고 실제 숫자 열은 숫자로 유지합니다.
-
-운영자·최고 관리자는 월 상세의 **월 마감·조정**에서 현재 잔액과 마감 당시 합계, 조정 이력을 확인합니다. 종료된 월이며 미확정 작업기록과 남은 예약이 없고 원장 잔액이 유효할 때 확인 체크 후 마감할 수 있습니다. **시간 원장**의 각 항목에서 **시간 조정**으로 이동하여 증감 종류, 정수 분, 사유를 입력하고 승인합니다. 마감 후에도 조정은 가능하지만 원래 원장과 마감 당시 합계는 변경되지 않으며, 실제 승인자와 관련 원장을 별도로 보존합니다. 고객 계정에는 이 관리 화면과 실행 권한을 제공하지 않습니다.
-
-## 개발 DB의 견적 보호 트리거
-
-로컬 Sail MySQL은 `log_bin_trust_function_creators=1`로 실행합니다. 바이너리 로그가 켜진 MySQL에서 일반 개발 계정으로 제출 견적의 수정·삭제 방지 트리거를 생성하기 위한 개발 전용 설정입니다. 애플리케이션 계정에 전역 `SUPER` 권한을 부여하거나 바이너리 로그를 끄지 않습니다.
-
-설정을 변경한 기존 환경은 `docker compose up -d --wait mysql`로 DB 컨테이너만 재생성한 뒤 마이그레이션과 테스트를 실행합니다. 기존 `sail-mysql` 볼륨은 유지하며 `down -v`를 사용하지 않습니다.
-
-운영 DB에 이 개발용 Compose 설정을 그대로 적용하지 않습니다. 운영 배포에서는 DBA가 트리거 생성 권한과 마이그레이션 실행 계정을 별도로 검토해야 합니다. 개발 환경 설정만으로 운영 마이그레이션 성공을 보장하지 않습니다.
-
-## 월 전환 Scheduler
-
-로컬 `scheduler` 서비스는 매일 애플리케이션 시간대의 09:00에 `desk:notify-month-transitions`를 실행합니다. Scheduler 자체는 매분 `desk:scheduler-heartbeat`로 데이터베이스 캐시에 마지막 실행 시각을 기록합니다. 기본 180초 안에 기록된 heartbeat가 없으면 `desk:check-scheduler`가 실패 종료 코드로 응답합니다. 명령을 수동으로 확인하려면 다음을 실행합니다.
-
-```powershell
-docker compose exec laravel.test php artisan desk:notify-month-transitions
-docker compose exec laravel.test php artisan desk:send-weekly-progress-reports
-docker compose exec laravel.test php artisan desk:check-scheduler
-docker compose exec laravel.test php artisan schedule:list
+```bash
+./scripts/configure-production.sh
+chmod 600 .env.production .env.database
+./scripts/deploy-production.sh
 ```
 
-이 작업은 월말 전환 대상을 찾아 헤더 알림을 만들 뿐, 예약을 자동 반환하거나 다음 달 시간을 예약하지 않습니다. 기존 월의 남은 예약 반환은 월 마지막 날부터 권한 있는 운영자가 사유와 함께 명시적으로 처리해야 하며, 계속 작업은 다음 달 사용 월을 지정한 새 견적의 고객 승인을 받아야 합니다. 운영 환경에는 Laravel Scheduler를 지속 실행하는 단일 프로세스와 중복 실행 방지에 사용할 공용 캐시가 필요합니다. Scheduler가 멈추면 스스로 경고할 수 없으므로 외부 감시에서는 `desk:check-scheduler`의 종료 코드를 확인해야 합니다. 허용 지연은 `SCHEDULER_HEARTBEAT_MAX_AGE_SECONDS`로 조정합니다.
+실제 비밀값, SMTP 인증정보, Tunnel 토큰은 저장소에 넣지 않는다. 최초 설정·Mailcow 연동·토큰 회전·배포 후 검사는 [배포 가이드](docs/deployment.md)를 따른다.
 
-제공된 React 관리자 템플릿은 변환 작업 전까지 `admin-template-source`에 보존합니다. 이 폴더는 애플리케이션 빌드 대상과 Git 추적 대상에서 제외됩니다.
+## 문서
+
+| 문서 | 내용 |
+| --- | --- |
+| [구현 순서](docs/implementation-process.md) | 0~4단계 로드맵, 완료 조건, 테스트·배포 검증 근거 |
+| [배포 가이드](docs/deployment.md) | 홈서버, Docker, Cloudflare Tunnel, SMTP, 건강 검사 |
+| [알림 카탈로그](docs/notification-catalog.md) | 업무 사건, 수신자, 중요도, 채널, 재시도·보안 규칙 |
+| [UI 적용 기준](docs/admin-template-mapping.md) | 역할별 탐색, 반응형 화면, 시각 토큰, Chromium 검증 |
+| [Hindsight 설정](docs/hindsight-setup.md) | 프로젝트 전용 공유 메모리, 인증 격리, 백업·복구 |
+
+## 현재 상태
+
+- 기능 로드맵 **0단계~4.35** 완료
+- 고객사 A 전체 데모와 고객사 B 접근 차단 운영 검증 완료
+- `https://desk.approid.team` 운영 배포, TLS·SMTP·Queue·Scheduler·ClamAV 기본 동작 확인
+- 재부팅 복구, 클라우드 증분 백업, 별도 복원, 배포 롤백, 운영 인수 감사는 **4.36~4.43**의 남은 범위
+
+완료 표시는 코드 존재가 아니라 자동 테스트, 수동 확인, 관련 문서 근거까지 충족했음을 의미한다.
