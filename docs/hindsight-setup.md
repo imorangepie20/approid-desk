@@ -61,8 +61,9 @@ Codex 전환에서는 사용하지 않는다. `status`/`probe`/`stop`/`restart`�
   수행했고 그대로 유지하라고 확인했으므로 다시 시작하지 않았다.
 
 장기 토큰 갱신은 아직 만료 시점이 오지 않아 실제 갱신을 검증한 것은 아니다.
-이번 세션에는 프로젝트 Hindsight `retain` 도구가 노출되지 않아 검증 요약의 메모리 저장은
-보류한다. API에 저장소 원문이나 인증정보를 직접 업로드하지 않았다.
+초기 전환 세션에서는 프로젝 Hindsight `retain`이 노출되지 않았지만, 후속 Codex 세션에서
+`approid-desk` bank의 `retain`이 저장을 수락하고 같은 합성 요약이 `recall`에서 반환되는 것을
+2026-10-04에 확인했다. API에 저장소 원문이나 인증정보를 직접 업로드하지 않았다.
 
 설정일: 2026-10-03. 작업 폴더는 **WSL Ubuntu-24.04의 `/home/jowoo/code/approid-desk`**로 합의했다.
 Windows의 `C:\wspace\approid-desk` 복사본은 변경하지 않았다. PhpStorm 설정도 변경하지 않았다.
