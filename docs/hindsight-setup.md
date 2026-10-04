@@ -1,5 +1,69 @@
 # APPROID Desk shared Hindsight memory
 
+## 현재 LLM 연결: Codex 계정 (2026-10-04)
+
+현재 Compose 설정은 `openai-codex` / `gpt-6-luna`다. 아래 2026-10-03 Gemini
+설정·검증 기록은 초기 구성의 이력이며, 현재 제공자를 의미하지 않는다.
+설치된 Hindsight의 기본 모델 `gpt-5.4-mini`는 이 계정에서 실제 호출 시 HTTP 400
+`model_not_supported`로 거절됐다. 현재 계정의 Codex 모델 목록에서 `gpt-6-luna`를 확인하고,
+추출·요약용 역할을 유지하는 모델로 선택했다. 목록 노출만으로 실제 호출 성공을 가정하지 않는다.
+
+- 기존 Windows Codex 계정과 동일한 계정으로 공식 device-code 로그인을 새로 완료했다.
+  WSL의 기존 Codex 로그인은 다른 계정이므로 사용하지 않았다.
+- 전용 인증 디렉터리는 저장소 밖 `/home/jowoo/.local/share/hindsight/codex-auth`다.
+  디렉터리 0700, `auth.json` 0600이며 현재 Codex 앱/IDE의 인증 파일을 복사하거나 덮어쓰지 않는다.
+- 디렉터리를 `/home/hindsight/.codex`에 마운트하고 `HINDSIGHT_API_LLM_CODEX_HOME`으로 지정한다.
+  제공자의 인증 갱신은 파일을 원자적으로 교체하므로 파일 하나가 아니라 디렉터리를 마운트한다.
+  전역 `CODEX_HOME`과 Windows/WSL의 기존 Codex 설정은 변경하지 않았다.
+- `HINDSIGHT_API_LLM_API_KEY`는 컨테이너에서 빈 값으로 재정의한다. 기존 외부 Gemini 키 파일은
+  변경하지 않고 복구용으로 보존한다. Codex 인증 파일·토큰은 Git, 메모리, 로그에 저장하지 않는다.
+- Codex 계정의 사용 한도를 사용한다. 로컬 임베딩·리랭커, loopback 포트, `logging: none`,
+  기존 `approid-desk-hindsight-data` 볼륨과 프로젝트별 bank는 유지한다.
+- 이것은 동일 로컬 Hindsight 서비스의 전역 LLM 설정 변경이다. bank 분리는 그대로이며,
+  다른 프로젝트의 원문이나 대화·비밀값을 테스트 요청에 포함하지 않는다.
+
+현재 설정 재적용은 WSL에서 다음 명령으로 Hindsight 한 서비스에만 수행한다.
+환경 파일의 **경로**만 전달하며 `docker compose config` 전체 출력은 공유하지 않는다.
+
+```bash
+HINDSIGHT_ENV_FILE=/mnt/c/Users/jowoo/AppData/Local/Hindsight/approid-desk/hindsight.env \
+  docker compose -f /home/jowoo/code/approid-desk/infra/hindsight/compose.yaml config --quiet
+HINDSIGHT_ENV_FILE=/mnt/c/Users/jowoo/AppData/Local/Hindsight/approid-desk/hindsight.env \
+  docker compose -f /home/jowoo/code/approid-desk/infra/hindsight/compose.yaml up -d --no-deps hindsight
+```
+
+기존 `scripts/hindsight/manage.py`의 `check-models`와 `up` 사전 검증/안내는 Gemini 전용이므로
+Codex 전환에서는 사용하지 않는다. `status`/`probe`/`stop`/`restart`의 공통 동작과 기존
+데이터 백업 절차는 별도이며, 앱 자체의 Codex 로그아웃으로 Hindsight 인증을 초기화하지 않는다.
+전용 인증 갱신이 영구 실패하면 **전용 저장소에만** 새 로그인하고 같은 계정인지 확인한다.
+
+전환 전 Compose·문서 백업은 저장소 밖
+`/home/jowoo/.local/state/approid-desk-hindsight/backups/codex-switch-20261004T122920491Z`다.
+복구 시 해당 Compose를 복원하고 기존 외부 Gemini 설정으로 Hindsight만 재적용한다.
+현재/과거 문서, bank, DB 볼륨을 삭제·교체하거나 다시 업로드하지 않는다.
+
+근거: [Hindsight Codex 설정·인증 격리](https://hindsight.vectorize.io/developer/models),
+[OpenAI 인증·자격 증명 저장](https://learn.chatgpt.com/docs/auth),
+[Codex 모델](https://learn.chatgpt.com/docs/models),
+[GPT-6 Luna 출력·도구 지원](https://developers.openai.com/api/docs/models/gpt-6-luna).
+2026-10-04 전환 검증 결과:
+
+- PASS 인증: 현재 Windows Codex와 동일 계정이고 서비스용 refresh credential은 별개다.
+  전용 디렉터리 0700/파일 0600과 기존 `codex login status`의 ChatGPT 로그인 상태를 확인했다.
+- PASS 설정·서비스: Compose `config --quiet`, `git diff --check`가 종료 코드 0이다.
+  실제 런타임은 `openai-codex`/`gpt-6-luna`, API 키는 빈 값이며 전용 인증 경로를 사용한다.
+  API/UI는 HTTP 200, MCP 초기화와 `tools/list`도 성공했다.
+- PASS 실제 호출: 설치된 native Codex 제공자로 합성 문자열의 정확한 응답 및
+  강제 도구/Pydantic 스키마 응답을 각각 검증했다. 메모리 쓰기는 수행하지 않았다.
+- PASS 보존: 4개 bank/43개 문서의 메타데이터·해시·개수와 노드/링크/관측 수가
+  전환 전후 정확히 일치한다. ERP 최신/날짜별 4개 문서의 원문 SHA256도 일치한다.
+  나머지 실행 서비스 9개의 컨테이너 ID는 유지됐다. `codex-lb`의 종료는 사용자가 직접
+  수행했고 그대로 유지하라고 확인했으므로 다시 시작하지 않았다.
+
+장기 토큰 갱신은 아직 만료 시점이 오지 않아 실제 갱신을 검증한 것은 아니다.
+이번 세션에는 프로젝트 Hindsight `retain` 도구가 노출되지 않아 검증 요약의 메모리 저장은
+보류한다. API에 저장소 원문이나 인증정보를 직접 업로드하지 않았다.
+
 설정일: 2026-10-03. 작업 폴더는 **WSL Ubuntu-24.04의 `/home/jowoo/code/approid-desk`**로 합의했다.
 Windows의 `C:\wspace\approid-desk` 복사본은 변경하지 않았다. PhpStorm 설정도 변경하지 않았다.
 
