@@ -46,6 +46,7 @@ class UserRoleTest extends TestCase
         $this->assertTrue(UserRole::Operator->hasPermission(Permission::CreateEstimates));
         $this->assertTrue(UserRole::Operator->hasPermission(Permission::LogWorkTime));
         $this->assertTrue(UserRole::Operator->hasPermission(Permission::CloseContractMonths));
+        $this->assertTrue(UserRole::Operator->hasPermission(Permission::ManageNotifications));
 
         $this->assertFalse(UserRole::Operator->hasPermission(Permission::ApproveEstimates));
         $this->assertFalse(UserRole::Operator->hasPermission(Permission::CompleteReviews));

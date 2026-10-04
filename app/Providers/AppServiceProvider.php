@@ -2,12 +2,17 @@
 
 namespace App\Providers;
 
+use App\Contracts\MalwareScanner;
 use App\Enums\Permission;
 use App\Models\User;
+use App\Services\ClamAvMalwareScanner;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -18,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(MalwareScanner::class, ClamAvMalwareScanner::class);
     }
 
     /**
@@ -28,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureAuthorization();
+        $this->configureRateLimiting();
     }
 
     /**
@@ -62,5 +68,18 @@ class AppServiceProvider extends ServiceProvider
                 static fn (User $user): bool => $user->role->hasPermission($permission),
             );
         }
+    }
+
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('attachment-download', function (Request $request): array {
+            $user = $request->user();
+            $userKey = $user instanceof User ? (string) $user->id : 'guest:'.($request->ip() ?? 'unknown');
+
+            return [
+                Limit::perMinute(10)->by('attachment-download:user:'.$userKey),
+                Limit::perHour(100)->by('attachment-download:ip:'.($request->ip() ?? 'unknown')),
+            ];
+        });
     }
 }

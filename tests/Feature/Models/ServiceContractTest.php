@@ -157,10 +157,9 @@ class ServiceContractTest extends TestCase
     }
 
     #[DataProvider('workStatuses')]
-    public function test_signed_contract_allows_work_transition(WorkRequestStatus $status): void
+    public function test_signed_contract_allows_work_state_creation(WorkRequestStatus $status): void
     {
-        $request = WorkRequest::factory()->withSignedContract()->create();
-        $request->update(['status' => $status]);
+        $request = WorkRequest::factory()->withSignedContract()->create(['status' => $status]);
         $this->assertSame($status, $request->fresh()->status);
         $contract = $request->serviceContract()->firstOrFail();
         $this->assertTrue($contract->workRequests()->first()->is($request));

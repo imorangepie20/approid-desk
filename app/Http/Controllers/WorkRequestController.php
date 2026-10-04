@@ -2,16 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\SendBusinessNotification;
 use App\Enums\CompanyStatus;
 use App\Enums\IntakeChannel;
+use App\Enums\MajorIncidentEventType;
+use App\Enums\MajorIncidentRollbackOutcome;
+use App\Enums\NotificationType;
 use App\Enums\WorkRequestPriority;
 use App\Enums\WorkRequestStatus;
 use App\Enums\WorkRequestType;
 use App\Models\Company;
+use App\Models\MajorIncidentEvent;
+use App\Models\MajorIncidentRollback;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkRequest;
 use App\Models\WorkRequestComment;
+use App\Services\RequestEstimateHistory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -34,6 +41,7 @@ class WorkRequestController extends Controller
         $selectedStatus = $request->string('status')->toString();
         $selectedType = $request->string('type')->toString();
         $selectedPriority = $request->string('priority')->toString();
+        $majorIncidentsOnly = $request->string('major_incident')->toString() === '1';
         $status = WorkRequestStatus::tryFrom($selectedStatus);
         $type = WorkRequestType::tryFrom($selectedType);
         $priority = WorkRequestPriority::tryFrom($selectedPriority);
@@ -50,6 +58,7 @@ class WorkRequestController extends Controller
                 'project:id,company_id,name',
                 'submitter:id,name',
                 'assignee:id,name',
+                'firstResponseEvent',
             ])
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $query->where(function (Builder $query) use ($search): void {
@@ -63,6 +72,7 @@ class WorkRequestController extends Controller
             ->when($status !== null, fn (Builder $query): Builder => $query->where('status', $status->value))
             ->when($type !== null, fn (Builder $query): Builder => $query->where('type', $type->value))
             ->when($priority !== null, fn (Builder $query): Builder => $query->where('priority', $priority->value))
+            ->when($majorIncidentsOnly, fn (Builder $query): Builder => $query->majorIncidents())
             ->when(
                 $canFilterCompanies && $companyId > 0,
                 fn (Builder $query): Builder => $query->where('company_id', $companyId),
@@ -70,6 +80,7 @@ class WorkRequestController extends Controller
             ->when($projectId > 0, fn (Builder $query): Builder => $query->where('project_id', $projectId))
             ->when($requestedFrom !== null, fn (Builder $query): Builder => $query->whereDate('requested_at', '>=', $requestedFrom))
             ->when($requestedTo !== null, fn (Builder $query): Builder => $query->whereDate('requested_at', '<=', $requestedTo))
+            ->majorIncidentsFirst()
             ->latest('requested_at')
             ->latest('id')
             ->paginate(20)
@@ -99,6 +110,7 @@ class WorkRequestController extends Controller
             'selectedStatus' => $selectedStatus,
             'selectedType' => $selectedType,
             'selectedPriority' => $selectedPriority,
+            'majorIncidentsOnly' => $majorIncidentsOnly,
             'selectedCompanyId' => $companyId,
             'selectedProjectId' => $projectId,
             'requestedFrom' => $requestedFrom ?? '',
@@ -249,27 +261,48 @@ class WorkRequestController extends Controller
             'late_entry_reason' => $requestedAt->isSameDay($registeredAt) ? null : ($validated['late_entry_reason'] ?? null),
         ]));
 
+        (new SendBusinessNotification)->handle(
+            $workRequest->is_urgent ? NotificationType::UrgentRequestCreated : NotificationType::RequestCreated,
+            $workRequest,
+            $user,
+        );
+
         return redirect()
             ->route('requests.show', $workRequest)
             ->with('success', '요청을 등록했습니다.');
     }
 
-    public function show(WorkRequest $workRequest): View
+    public function show(Request $request, WorkRequest $workRequest, RequestEstimateHistory $history): View
     {
         Gate::authorize('view', $workRequest);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
 
         $workRequest->load([
             'company:id,name',
             'project:id,company_id,name',
             'submitter:id,name',
             'assignee:id,name',
+            'serviceContract',
             'comments' => fn ($query) => $query->with('author:id,name')->oldest(),
             'activities' => fn ($query) => $query->with('actor:id,name')->latest('occurred_at')->latest('id'),
+            'majorIncidentEvents' => fn ($query) => $query->with('recorder:id,name')->oldest('occurred_at')->oldest('id'),
+            'majorIncidentRollbacks' => fn ($query) => $query->with(['starter:id,name', 'completer:id,name'])->latest('started_at')->latest('id'),
+            'firstResponseEvent',
         ]);
 
         return view('requests.show', [
             'workRequest' => $workRequest,
             'canComment' => Gate::allows('create', [WorkRequestComment::class, $workRequest]),
+            'canRecordMajorIncidentEvent' => Gate::allows('create', [MajorIncidentEvent::class, $workRequest]),
+            'canStartMajorIncidentRollback' => Gate::allows('create', [MajorIncidentRollback::class, $workRequest])
+                && $workRequest->majorIncidentRollbacks->doesntContain(fn (MajorIncidentRollback $rollback): bool => $rollback->isActive()),
+            'majorIncidentEventTypes' => MajorIncidentEventType::cases(),
+            'majorIncidentRollbackOutcomes' => MajorIncidentRollbackOutcome::cases(),
+            'estimateHistory' => $history->forRequest($user, $workRequest),
+            'availableTransitions' => array_values(array_filter(WorkRequestStatus::cases(),
+                fn (WorkRequestStatus $to): bool => Gate::allows('transition', [$workRequest, $to]))),
+            'lastStatusChange' => (int) $workRequest->statusChanges()->max('id'),
         ]);
     }
 

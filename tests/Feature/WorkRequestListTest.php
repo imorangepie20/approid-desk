@@ -151,8 +151,51 @@ class WorkRequestListTest extends TestCase
             ->assertSee('표시 고객사')
             ->assertSee('표시 프로젝트')
             ->assertSee('검수 대기')
+            ->assertSee('주요 장애')
             ->assertSee('높음')
             ->assertSee('2026.10.02');
+    }
+
+    public function test_open_major_incidents_are_listed_first_and_can_be_filtered_exactly(): void
+    {
+        $operator = User::factory()->operator()->create();
+        $company = Company::factory()->create();
+        $project = Project::factory()->for($company)->create();
+        $incident = $this->createRequest($company, $project, '오래된 주요 장애', [
+            'is_urgent' => true,
+            'requested_at' => '2026-10-01 09:00:00',
+            'registered_at' => '2026-10-01 09:00:00',
+        ]);
+        $regular = $this->createRequest($company, $project, '최신 일반 요청', [
+            'priority' => WorkRequestPriority::High,
+            'requested_at' => '2026-10-03 12:00:00',
+            'registered_at' => '2026-10-03 12:00:00',
+        ]);
+        $completedUrgent = $this->createRequest($company, $project, '완료된 과거 장애', [
+            'is_urgent' => true,
+            'status' => WorkRequestStatus::Completed,
+            'requested_at' => '2026-10-03 11:00:00',
+            'registered_at' => '2026-10-03 11:00:00',
+        ]);
+
+        $this->actingAs($operator)->get(route('requests.index'))
+            ->assertOk()
+            ->assertViewHas('workRequests', fn (LengthAwarePaginator $requests): bool => $requests->getCollection()->modelKeys() === [
+                $incident->id,
+                $regular->id,
+                $completedUrgent->id,
+            ])
+            ->assertSeeInOrder(['오래된 주요 장애', '최신 일반 요청', '완료된 과거 장애']);
+
+        $this->get(route('requests.index', ['major_incident' => 1]))
+            ->assertOk()
+            ->assertViewHas('majorIncidentsOnly', true)
+            ->assertViewHas('workRequests', fn (LengthAwarePaginator $requests): bool => $requests->total() === 1 && $requests->first()?->is($incident))
+            ->assertSee('name="major_incident"', false)
+            ->assertSee('checked', false)
+            ->assertSee('오래된 주요 장애')
+            ->assertDontSee('최신 일반 요청')
+            ->assertDontSee('완료된 과거 장애');
     }
 
     public function test_request_list_shows_empty_state_and_reset_link_for_unmatched_filters(): void
@@ -166,6 +209,40 @@ class WorkRequestListTest extends TestCase
             ->assertSee('data-test="request-empty-state"', false)
             ->assertSee(route('requests.index'), false)
             ->assertSee('초기화');
+    }
+
+    public function test_request_list_displays_non_contractual_response_targets_and_only_warns_for_open_elapsed_incidents(): void
+    {
+        $this->travelTo('2026-10-04 10:30:00');
+        $operator = User::factory()->operator()->create();
+        $company = Company::factory()->create();
+        $project = Project::factory()->for($company)->create();
+        $overdue = $this->createRequest($company, $project, '응답 목표 경과 장애', [
+            'is_urgent' => true,
+            'requested_at' => '2026-10-04 09:00:00',
+            'registered_at' => '2026-10-04 09:00:00',
+        ]);
+        $withinDeadline = $this->createRequest($company, $project, '응답 목표 전 장애', [
+            'is_urgent' => true,
+            'requested_at' => '2026-10-04 10:00:00',
+            'registered_at' => '2026-10-04 10:00:00',
+        ]);
+        $completed = $this->createRequest($company, $project, '완료된 장애 목표 기록', [
+            'is_urgent' => true,
+            'status' => WorkRequestStatus::Completed,
+            'requested_at' => '2026-10-04 08:00:00',
+            'registered_at' => '2026-10-04 08:00:00',
+        ]);
+
+        $this->actingAs($operator)->get(route('requests.index'))
+            ->assertOk()
+            ->assertSee('data-test="major-incident-response-target"', false)
+            ->assertSeeInOrder([$overdue->title, '2026.10.04 10:00', '내부 목표 경과'])
+            ->assertSeeInOrder([$withinDeadline->title, '2026.10.04 11:00', '목표 응답 대기'])
+            ->assertSeeInOrder([$completed->title, '2026.10.04 09:00'])
+            ->assertSee('내부 최초 응답 목표')
+            ->assertSee('계약 보장 아님')
+            ->assertDontSee('최초 응답 기한');
     }
 
     public function test_request_navigation_is_connected_from_sidebar_dashboards_and_project_detail(): void

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Models;
 
+use App\Actions\TransitionWorkRequest;
 use App\Enums\WorkRequestActivityType;
 use App\Enums\WorkRequestStatus;
 use App\Models\Company;
@@ -55,10 +56,8 @@ class WorkRequestActivityTest extends TestCase
         $workRequest = WorkRequest::factory()->create();
         $this->actingAs($operator);
 
-        $workRequest->update([
-            'status' => WorkRequestStatus::Estimating,
-            'assigned_to' => $assignee->id,
-        ]);
+        (new TransitionWorkRequest)->handle($operator, $workRequest, WorkRequestStatus::Estimating);
+        $workRequest->update(['assigned_to' => $assignee->id]);
 
         $statusActivity = $workRequest->activities()
             ->where('type', WorkRequestActivityType::StatusChanged->value)
@@ -68,7 +67,7 @@ class WorkRequestActivityTest extends TestCase
             ->sole();
 
         $this->assertSame(['status' => WorkRequestStatus::Received->value], $statusActivity->before_values);
-        $this->assertSame(['status' => WorkRequestStatus::Estimating->value], $statusActivity->after_values);
+        $this->assertSame(WorkRequestStatus::Estimating->value, $statusActivity->after_values['status']);
         $this->assertSame(['assigned_to' => null], $assigneeActivity->before_values);
         $this->assertSame(['assigned_to' => $assignee->id], $assigneeActivity->after_values);
         $this->assertTrue($workRequest->fresh()->assignee->is($assignee));

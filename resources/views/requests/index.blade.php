@@ -4,6 +4,7 @@
             || $selectedStatus !== ''
             || $selectedType !== ''
             || $selectedPriority !== ''
+            || $majorIncidentsOnly
             || ($canFilterCompanies && $selectedCompanyId > 0)
             || $selectedProjectId > 0
             || $requestedFrom !== ''
@@ -40,6 +41,11 @@
                             <option value="{{ $status->value }}" @selected($selectedStatus === $status->value)>{{ $status->label() }}</option>
                         @endforeach
                     </select>
+                </label>
+
+                <label class="flex min-h-10 items-center gap-3 self-end rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
+                    <input name="major_incident" type="checkbox" value="1" @checked($majorIncidentsOnly) class="size-4 rounded border-zinc-300 text-red-700 focus:ring-red-600 dark:border-zinc-600 dark:bg-zinc-900" />
+                    <span class="font-medium text-zinc-800 dark:text-zinc-200">주요 업무 장애만</span>
                 </label>
 
                 <label class="grid gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -101,7 +107,7 @@
                     @if ($hasFilters)
                         선택한 조건이 검색 결과와 페이지 이동에 유지됩니다.
                     @else
-                        최신 접수 순으로 전체 요청을 표시합니다.
+                        열린 주요 업무 장애를 먼저 표시한 뒤 최신 접수 순으로 정렬합니다.
                     @endif
                 </p>
                 <div class="flex gap-2">
@@ -154,16 +160,25 @@
                                         \App\Enums\WorkRequestPriority::Low => 'text-zinc-500 dark:text-zinc-400',
                                         default => 'text-zinc-800 dark:text-zinc-200',
                                     };
+                                    $responseTargetAt = $workRequest->majorIncidentFirstResponseTargetAt();
+                                    $responseStatus = $workRequest->majorIncidentFirstResponseTargetStatus();
+                                    $responseTargetElapsed = $responseStatus === \App\Enums\MajorIncidentResponseStatus::Overdue;
+                                    $responseMet = $responseStatus === \App\Enums\MajorIncidentResponseStatus::Met;
                                 @endphp
                                 <tr class="transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03]">
                                     <td class="max-w-sm px-5 py-4">
                                         <div class="flex items-center gap-2">
                                             @if ($workRequest->is_urgent)
-                                                <span class="inline-flex shrink-0 rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">긴급</span>
+                                                <span class="inline-flex shrink-0 rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">주요 장애</span>
                                             @endif
                                             <a href="{{ route('requests.show', $workRequest) }}" class="truncate font-semibold text-zinc-950 hover:text-cyan-700 dark:text-white dark:hover:text-cyan-300">{{ $workRequest->title }}</a>
                                         </div>
                                         <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">#{{ $workRequest->id }} · 요청자 {{ $workRequest->submitter->name }}</p>
+                                        @if ($responseTargetAt)
+                                            <p class="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs {{ $responseMet ? 'font-semibold text-emerald-700 dark:text-emerald-300' : ($responseTargetElapsed ? 'font-semibold text-red-700 dark:text-red-300' : 'text-zinc-500 dark:text-zinc-400') }}" data-test="major-incident-response-target">
+                                                <span>내부 최초 응답 목표</span><time datetime="{{ $responseTargetAt->toAtomString() }}" class="font-mono">{{ $responseTargetAt->format('Y.m.d H:i') }}</time><span>· {{ $responseStatus?->label() }}</span><span>· 계약 보장 아님</span>@if ($workRequest->firstResponseEvent)<span>· 응답 <time datetime="{{ $workRequest->firstResponseEvent->occurred_at->toAtomString() }}" class="font-mono">{{ $workRequest->firstResponseEvent->occurred_at->format('Y.m.d H:i') }}</time></span>@endif
+                                            </p>
+                                        @endif
                                     </td>
                                     <td class="max-w-xs px-5 py-4">
                                         <p class="truncate font-medium text-zinc-800 dark:text-zinc-200">{{ $workRequest->company->name }}</p>
@@ -191,13 +206,17 @@
                             $priorityClass = $workRequest->priority === \App\Enums\WorkRequestPriority::High
                                 ? 'text-red-700 dark:text-red-300'
                                 : 'text-zinc-600 dark:text-zinc-300';
+                            $responseTargetAt = $workRequest->majorIncidentFirstResponseTargetAt();
+                            $responseStatus = $workRequest->majorIncidentFirstResponseTargetStatus();
+                            $responseTargetElapsed = $responseStatus === \App\Enums\MajorIncidentResponseStatus::Overdue;
+                            $responseMet = $responseStatus === \App\Enums\MajorIncidentResponseStatus::Met;
                         @endphp
                         <li class="px-5 py-4">
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2">
                                         @if ($workRequest->is_urgent)
-                                            <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">긴급</span>
+                                            <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">주요 장애</span>
                                         @endif
                                         <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusClass }}">{{ $workRequest->status->label() }}</span>
                                     </div>
@@ -206,6 +225,11 @@
                                 <span class="shrink-0 text-xs font-semibold {{ $priorityClass }}">{{ $workRequest->priority->label() }}</span>
                             </div>
                             <p class="mt-3 truncate text-sm text-zinc-700 dark:text-zinc-200">{{ $workRequest->company->name }} · {{ $workRequest->project->name }}</p>
+                            @if ($responseTargetAt)
+                                <p class="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs {{ $responseMet ? 'font-semibold text-emerald-700 dark:text-emerald-300' : ($responseTargetElapsed ? 'font-semibold text-red-700 dark:text-red-300' : 'text-zinc-500 dark:text-zinc-400') }}" data-test="major-incident-response-target">
+                                    <span>내부 최초 응답 목표</span><time datetime="{{ $responseTargetAt->toAtomString() }}" class="font-mono">{{ $responseTargetAt->format('Y.m.d H:i') }}</time><span>· {{ $responseStatus?->label() }}</span><span>· 계약 보장 아님</span>@if ($workRequest->firstResponseEvent)<span>· 응답 <time datetime="{{ $workRequest->firstResponseEvent->occurred_at->toAtomString() }}" class="font-mono">{{ $workRequest->firstResponseEvent->occurred_at->format('Y.m.d H:i') }}</time></span>@endif
+                                </p>
+                            @endif
                             <div class="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
                                 <span>{{ $workRequest->type->label() }} · #{{ $workRequest->id }}</span>
                                 <time datetime="{{ $workRequest->requested_at->toDateString() }}" class="shrink-0 font-mono">{{ $workRequest->requested_at->format('Y.m.d') }}</time>

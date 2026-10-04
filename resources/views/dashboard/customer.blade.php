@@ -9,6 +9,8 @@
             <p class="font-mono text-sm text-zinc-500 dark:text-zinc-400">기준일 {{ $asOf }}</p>
         </header>
 
+        <x-dashboard.major-incidents :requests="$majorIncidents" :count="$metrics['majorIncidents']" />
+
         <section aria-labelledby="customer-metrics-heading">
             <h2 id="customer-metrics-heading" class="sr-only">고객 업무 현황</h2>
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -44,6 +46,74 @@
                     data-test="metric-awaiting-review"
                 />
             </div>
+        </section>
+
+        <section class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-[#141B2D]" aria-labelledby="customer-time-heading" data-test="customer-time-overview">
+            <div class="flex flex-col gap-2 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700/80 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <p class="text-xs font-semibold tracking-[0.16em] text-cyan-700 uppercase dark:text-cyan-300">Monthly usage</p>
+                    <h2 id="customer-time-heading" class="mt-1 font-semibold text-zinc-950 dark:text-white">이번 달 자사 시간 현황</h2>
+                    <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">계약별 제공시간과 승인·작업에 반영된 고객 차감시간을 확인합니다.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <p class="font-mono text-sm text-zinc-500 dark:text-zinc-400">{{ $customerTime['month']->format('Y.m') }}</p>
+                    @can(\App\Enums\Permission::ViewUsage->value)
+                        <a href="{{ route('usage.index', ['month' => $customerTime['month']->format('Y-m')]) }}" class="text-sm text-cyan-700 dark:text-cyan-300">월별 내역</a>
+                    @endcan
+                </div>
+            </div>
+
+            <div class="grid border-b border-zinc-200 dark:border-zinc-700/80 sm:grid-cols-2 xl:grid-cols-4">
+                @foreach ([
+                    ['label' => '제공시간', 'key' => 'provided_minutes', 'tone' => 'text-cyan-700 dark:text-cyan-300'],
+                    ['label' => '고객 차감', 'key' => 'customer_charged_minutes', 'tone' => 'text-amber-700 dark:text-amber-300'],
+                    ['label' => '예약 중', 'key' => 'reserved_minutes', 'tone' => 'text-violet-700 dark:text-violet-300'],
+                    ['label' => '사용 가능', 'key' => 'available_minutes', 'tone' => 'text-emerald-700 dark:text-emerald-300'],
+                ] as $summary)
+                    <div class="border-zinc-200 px-5 py-4 dark:border-zinc-700/80 sm:[&:not(:nth-child(2n+1))]:border-l xl:[&:not(:first-child)]:border-l">
+                        <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $summary['label'] }}</p>
+                        <p class="mt-1 font-mono text-xl font-semibold {{ $summary['tone'] }}" data-test="customer-time-total-{{ str_replace('_minutes', '', $summary['key']) }}">{{ number_format($customerTime['totals'][$summary['key']]) }}분</p>
+                    </div>
+                @endforeach
+            </div>
+
+            @if ($customerTime['rows']->isEmpty())
+                <div class="px-5 py-12 text-center" data-test="customer-time-unconfigured">
+                    <div class="mx-auto grid size-11 place-items-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300"><flux:icon.clock class="size-5" /></div>
+                    <p class="mt-3 font-medium text-zinc-900 dark:text-white">이번 달 제공시간이 설정되지 않았습니다.</p>
+                    <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">계약 시간이 등록되면 사용 현황을 이곳에서 확인할 수 있습니다.</p>
+                </div>
+            @else
+                <div class="hidden overflow-x-auto md:block">
+                    <table class="w-full min-w-[720px] text-left text-sm">
+                        <thead class="bg-zinc-50 text-xs text-zinc-500 dark:bg-white/[0.025] dark:text-zinc-400">
+                            <tr><th class="px-5 py-3 font-medium">서비스 계약</th><th class="px-4 py-3 text-right font-medium">제공시간</th><th class="px-4 py-3 text-right font-medium">고객 차감</th><th class="px-4 py-3 text-right font-medium">예약 중</th><th class="px-5 py-3 text-right font-medium">사용 가능</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700/80">
+                            @foreach ($customerTime['rows'] as $row)
+                                <tr data-test="customer-time-row-{{ $row['contract']->id }}">
+                                    <td class="px-5 py-4"><p class="font-semibold text-zinc-950 dark:text-white">{{ $row['contract']->type->label() }}</p><p class="mt-1 font-mono text-xs text-zinc-500">계약 #{{ $row['contract']->id }}</p></td>
+                                    <td class="px-4 py-4 text-right font-mono">{{ number_format($row['provided_minutes']) }}분</td>
+                                    <td class="px-4 py-4 text-right font-mono">{{ number_format($row['customer_charged_minutes']) }}분</td>
+                                    <td class="px-4 py-4 text-right font-mono">{{ number_format($row['reserved_minutes']) }}분</td>
+                                    <td class="px-5 py-4 text-right font-mono font-semibold text-emerald-700 dark:text-emerald-300">{{ number_format($row['available_minutes']) }}분</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="divide-y divide-zinc-200 dark:divide-zinc-700/80 md:hidden">
+                    @foreach ($customerTime['rows'] as $row)
+                        <article class="px-5 py-4" data-test="customer-time-card-{{ $row['contract']->id }}">
+                            <div class="flex items-center justify-between gap-3"><p class="font-semibold text-zinc-950 dark:text-white">{{ $row['contract']->type->label() }}</p><p class="font-mono text-xs text-zinc-500">계약 #{{ $row['contract']->id }}</p></div>
+                            <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                <div><dt class="text-xs text-zinc-500">제공 / 사용 가능</dt><dd class="mt-1 font-mono">{{ number_format($row['provided_minutes']) }}분 / <span class="text-emerald-700 dark:text-emerald-300">{{ number_format($row['available_minutes']) }}분</span></dd></div>
+                                <div><dt class="text-xs text-zinc-500">고객 차감 / 예약</dt><dd class="mt-1 font-mono">{{ number_format($row['customer_charged_minutes']) }}분 / {{ number_format($row['reserved_minutes']) }}분</dd></div>
+                            </dl>
+                        </article>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         <div class="grid items-start gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -123,7 +193,7 @@
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2">
                                         @if ($workRequest->is_urgent)
-                                            <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">긴급</span>
+                                            <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">주요 장애</span>
                                         @endif
                                         <span class="inline-flex rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
                                             {{ $workRequest->status->label() }}

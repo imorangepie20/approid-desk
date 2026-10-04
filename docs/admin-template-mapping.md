@@ -144,6 +144,52 @@
 
 ## 완료 확인
 
+### 2026-10-03 공통 셸 누락 원인과 복구
+
+- 기준 원본: `https://hud.approid.team/`, `imorangepie20/hud-admin-template`의 커밋 `df1f37145eb162297bc69aaa08c650d71586d774`. 로컬 참고 자료의 `Header.tsx`와 원격 파일은 줄바꿈 정규화 후 동일하다.
+- 원인은 WSL 이동이 아니라 적용 누락이었다. 실제 공통 레이아웃이 Starter Kit의 사이드바 전용 구조를 사용했고, 헤더는 모바일용 `lg:hidden` 구성뿐이었다. 별도 헤더 레이아웃은 실제 화면에 연결되지 않았다. 위 매핑 문서의 상단 헤더 적용 약속과 구현이 달랐다.
+- Windows 잔존본과 WSL 공통 레이아웃의 해시가 동일했다. Git 기록만으로 최초 시각적 변경 시점을 특정할 수 없으므로 특정 작업에서 삭제했다고 단정하지 않는다.
+- 공통 셸에서 헤더를 직접 포함하도록 복구했다. 데스크톱 사이드바 256px/접힘 80px, 상단 고정 헤더 64px, 본문 여백 24px, 원본 밝은/어두운 색상과 격자 배경을 적용했다.
+- 1024px 미만에서는 사이드바를 서랍 메뉴로 전환한다. 모바일 본문 여백은 16px이며 포커스 제한, Escape 닫기, 메뉴 이동 후 닫기를 적용했다.
+- 검색은 실제 요청 목록, 사용자 메뉴는 실제 로그인 계정·설정·로그아웃에 연결했다. 테마는 기존 Flux appearance 설정과 공유하며 접기와 테마 선택은 새로고침 후 유지된다.
+- 원본과 의도적으로 다른 부분: APPROID DESK 브랜드, 역할별 업무 메뉴, 기존 Instrument Sans, 모바일 서랍, 제외 범위인 이메일·달력 바로가기 생략. 헤더에는 실제 데이터베이스 알림만 표시하며 현재 월 전환 알림을 지원한다. 4.9의 공통 타입 카탈로그를 실제 업무 사건과 큐 이메일에 연결하는 작업은 4.10 이후 범위다. 가짜 알림이나 개수는 넣지 않는다. 원본 전체 데모의 픽셀 단위 복제를 완료했다는 의미는 아니다.
+
+### 재현 가능한 브라우저 검사
+
+`tests/Browser/HudShellBrowserTest.php`는 별도 `testing` DB의 임시 계정과 8787 포트의 테스트 서버를 사용한다. 개발 데이터와 운영 환경은 수정하지 않는다. DB를 공유하므로 다른 PHPUnit 실행과 병렬로 실행하지 않는다. Playwright는 프로젝트 의존성 대신 컨테이너의 임시 경로에 설치한다(컨테이너 재생성 시 재설치).
+
+```bash
+docker compose exec -T laravel.test npm install --prefix /tmp/approid-ui-audit --no-audit --no-fund playwright@1.63.0
+docker compose exec -T laravel.test /tmp/approid-ui-audit/node_modules/.bin/playwright install chromium
+docker compose exec -T laravel.test npm run build
+docker compose exec -T laravel.test php artisan test --compact tests/Browser/HudShellBrowserTest.php
+```
+
+- Chromium에서 1440/768/375px × 밝은/어두운 테마, 목록·상세·작성·견적 미리보기·고객 승인·설정 화면을 확인한다.
+- 헤더 치수, 배경색, 가로 넘침, 검색, 접기·테마 저장, Livewire 이동 후 컨트롤, 사용자 메뉴·로그아웃, 역할별 메뉴, 모바일 키보드 동작을 검사한다.
+- 결과 JSON과 실제 캡처는 `storage/app/ui-audit/`에 보관한다(개발 산출물이며 Git 제외). 자동 테스트와 캡처 육안 점검을 구분하고 다른 브라우저·운영 배포 검증까지 완료했다고 확대 해석하지 않는다.
+- 2026-10-03 실행 결과: 86개 화면·폭·테마 조합 및 8개 조작 검증 그룹 통과. JavaScript/콘솔 오류, 실패 HTTP 응답, 실패 네트워크 요청 각각 0건. 본문 바로가기와 스크롤 중 헤더 유지도 통과했다. 원본·데스크톱·태블릿·모바일·메뉴·견적 작성·고객 승인 캡처를 직접 비교 확인했다.
+
+### 기존 기준 정의 완료 내역
+
+2.12 회귀 검사에서도 86개 화면 조합이 통과했다. 조작 검증은 고객 견적 수정 요청 후 승인 버튼 숨김과 운영자 모바일 보류·복귀를 추가해 총 10개 그룹이며, 실제 작업 화면 캡처는 `storage/app/ui-audit/request-action-mobile.png`와 `request-action-desktop.png`에 기록한다.
+
+2.13에서는 운영 승인·검수 대기 패널을 추가하고 기존 공통 셸을 유지했다. 같은 86개 화면 조합과 총 12개 조작 그룹을 통과했다. 실제 대시보드 캡처는 `storage/app/ui-audit/0-1440-dark.png`와 `60-375-light.png`이며 대기 목록의 긴 제목·상세 이동·상태 필터·처리 후 제외를 확인했다.
+
+3.11에서는 운영 대시보드에 이번 달 고객별 시간 현황을 추가했다. 제공·고객 차감·예약·비차감·전체 투입·사용 가능시간을 데스크톱 표와 모바일 카드로 분리해 표시하며, 같은 86개 화면 조합과 총 13개 조작 그룹을 통과했다. 실제 캡처 `storage/app/ui-audit/0-1440-dark.png`와 `48-375-dark.png`에서 HUD 헤더·사이드바 유지, 표/카드 전환과 가로 넘침 0을 직접 확인했다.
+
+3.12에서는 고객 대시보드에 이번 달 자사 시간 현황과 계약별 내역을 추가했다. 제공·고객 차감·예약·사용 가능시간을 고객 관리자와 일반 사용자에게 동일한 자사 범위로 표시하며, 같은 86개 화면 조합과 총 14개 조작 그룹을 통과했다. 실제 캡처 `storage/app/ui-audit/73-1440-dark.png`와 `81-375-dark.png`에서 계약별 표/카드 전환, 기존 프로젝트·요청 영역과 가로 넘침 0을 직접 확인했다.
+
+3.13에서는 요청 상세의 작업시간 링크와 운영자 전용 목록·입력·수정 화면을 추가했다. 기존 HUD 셸과 Flux 아이콘을 사용하고 저장된 초안에서 확인 체크 후 차감 또는 비차감을 확정한다. `tests/Browser/work-log-entry.cjs`로 1440px 입력·수정·차감 확정, 375px 비차감 입력·확정을 실제 Chromium에서 검증했다. 가로 넘침과 콘솔·HTTP·네트워크 오류는 0건이며 `storage/app/ui-audit/work-log-form-mobile.png`, `work-log-list-desktop.png`를 직접 확인했다. 실행 명령은 위 PHPUnit 명령에 `--filter=test_work_log_entry_in_chromium`을 추가하며 결과는 `work-log-report.json`에 기록한다.
+
+3.14에서는 사이드바·대시보드에서 월 사용내역으로 연결하고 월별 계약 목록, 확정 사용내역과 시간 원장 탭을 추가했다. 기존 `ViewUsage` 권한에 따라 운영자·최고 관리자·고객사 관리자에게만 상세 메뉴를 표시한다. 계약 목록은 1280px 이상에서 표로, 작은 화면에서는 세로 목록으로 표시하며 사용내역과 원장은 긴 요청 제목을 줄바꿈한다. `tests/Browser/monthly-usage.cjs`로 운영자·고객 관리자 × 1440/768/375px × 밝은/어두운 테마 × 목록/사용내역/원장의 **36개 조합**과 월·고객사·원장 종류 필터, 빈 상태, 취소 반영 합계, 고객 내부정보 비노출을 확인했다. 기존 HUD **86개 조합·14개 조작 그룹**도 다시 통과했다. 별도 Chromium 검사 **2개·12단언**으로 모두 통과했고 두 보고서의 콘솔·HTTP·네트워크 오류는 0건이다. `storage/app/ui-audit/monthly-admin-usage-375-light.png`, `monthly-admin-ledger-375-dark.png`, `monthly-operator-index-1440-dark.png`를 직접 확인했다. 새 보고서는 `monthly-usage-report.json`이며 재현 시 위 PHPUnit 명령에 `--filter='test_monthly_usage_in_chromium|test_hud_shell_in_chromium'`을 추가한다.
+
+3.15에서는 운영자 전용 월 마감·조정 화면과 원장별 시간 조정 입력 화면을 추가했다. 마감 당시 합계와 현재 합계를 구분하고, 조정 이력에는 관련 원장·승인자·사유를 표시한다. `tests/Browser/month-management.cjs`로 실제 마감, 모바일 잔액 초과 거부와 입력값 유지, 마감 후 조정 승인을 확인했다. 1440/768/375px × 밝은/어두운 테마 × 관리/입력의 **12개 조합**에서 가로 넘침과 콘솔·HTTP 오류가 없었고 Chromium **1개·8단언**을 통과했다. `storage/app/ui-audit/month-management-report.json`에 결과를 기록하고 `month-management-manage-375-light.png`, `month-management-adjust-375-light.png`, `month-management-adjust-1440-dark.png`를 직접 확인했다. 기존 월 사용내역 36개 조합도 재검증했다. 재현 명령은 위 PHPUnit 명령에 `--filter=test_month_management_in_chromium`을 추가한다.
+
+3.16에서는 월 상세의 사용내역·시간 원장 탭에 다운로드 아이콘이 있는 **CSV 다운로드** 버튼을 추가했다. `tests/Browser/monthly-usage.cjs`에서 운영자와 고객 관리자의 모바일 사용내역 다운로드, 발생 종류 필터를 적용한 원장 다운로드, 파일명·BOM·내부 정보 공개 범위를 확인했다. Chromium **1개·7단언**과 기존 **36개 화면·폭·테마 조합**을 통과했으며 가로 넘침·콘솔·HTTP·네트워크 오류는 0건이다. `storage/app/ui-audit/monthly-admin-usage-375-light.png`, `monthly-operator-ledger-1440-dark.png`를 직접 확인했다. 브라우저가 정상 다운로드를 시작하며 발생시키는 `net::ERR_ABORTED`는 CSV 경로에 한해 제외하고, 실제 다운로드 성공 여부는 별도로 검사한다.
+
+4.13에서는 운영자·최고 관리자 전용 **알림 발송** 목록과 최종 실패 재시도 작업을 추가했다. `tests/Browser/notification-deliveries.cjs`로 1440/768/375px × 밝은/어두운 테마의 **6개 조합**, 긴 요청 제목과 수신자 줄바꿈, 상태·채널 필터, 가로 넘침 0을 확인했다. 실제 재시도 뒤 실패 목록에서 사라지고 같은 전달 건이 발송 완료 목록에 나타나는 흐름을 검증했으며 Chromium **1개·9단언**, 콘솔·HTTP 오류 0건을 기록했다. 결과는 `storage/app/ui-audit/notification-deliveries-report.json`, 대표 캡처는 `notification-deliveries-1440-dark.png`와 `notification-deliveries-375-light.png`다.
+
 - 원본 화면과 공통 컴포넌트의 적용 여부를 목록화했다.
 - 역할별 사이드바 메뉴를 정의했다.
 - 밝은 화면과 어두운 화면의 색상 기준을 정했다.

@@ -32,7 +32,7 @@
                 <x-dashboard.stat-card title="전체 요청" :value="$metrics['totalRequests']" description="프로젝트에 등록된 요청" icon="inbox-stack" data-test="metric-total-requests" />
                 <x-dashboard.stat-card title="진행 요청" :value="$metrics['openRequests']" description="완료·취소 전인 요청" icon="arrow-path" tone="emerald" data-test="metric-open-requests" />
                 <x-dashboard.stat-card title="완료 요청" :value="$metrics['completedRequests']" description="작업을 마친 요청" icon="check-circle" data-test="metric-completed-requests" />
-                <x-dashboard.stat-card title="긴급 요청" :value="$metrics['urgentRequests']" description="처리가 필요한 긴급 요청" icon="exclamation-triangle" tone="red" data-test="metric-urgent-requests" />
+                <x-dashboard.stat-card title="주요 장애" :value="$metrics['majorIncidents']" description="일반 요청보다 먼저 확인할 장애" icon="exclamation-triangle" tone="red" data-test="metric-major-incidents" />
             </div>
         </section>
 
@@ -69,7 +69,7 @@
                                         <div class="min-w-0">
                                             <div class="flex flex-wrap items-center gap-2">
                                                 @if ($workRequest->is_urgent)
-                                                    <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">긴급</span>
+                                                    <span class="inline-flex rounded bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">주요 장애</span>
                                                 @endif
                                                 <span class="inline-flex rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">{{ $workRequest->status->label() }}</span>
                                                 <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ $workRequest->type->label() }} · {{ $workRequest->priority->label() }}</span>

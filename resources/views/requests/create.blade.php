@@ -164,7 +164,7 @@
                         <label class="flex items-start gap-3 rounded-lg border border-zinc-200 px-3 py-3 text-sm dark:border-zinc-700">
                             <input type="hidden" name="is_urgent" value="0" />
                             <input name="is_urgent" type="checkbox" value="1" @checked(old('is_urgent') === '1') class="mt-0.5 size-4 rounded border-zinc-300 text-cyan-700 focus:ring-cyan-600 dark:border-zinc-600 dark:bg-zinc-900" />
-                            <span><span class="font-medium text-zinc-900 dark:text-white">긴급 요청</span><span class="mt-0.5 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">업무 중단 등 즉시 확인이 필요한 경우에만 선택해 주세요.</span></span>
+                            <span><span class="font-medium text-zinc-900 dark:text-white">주요 업무 장애</span><span class="mt-0.5 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">업무 중단 등 일반 요청보다 먼저 확인해야 하는 경우에만 선택해 주세요.</span></span>
                         </label>
                     </div>
                 </section>

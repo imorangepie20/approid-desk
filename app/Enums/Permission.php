@@ -12,6 +12,7 @@ enum Permission: string
     case ManageWork = 'manage_work';
     case LogWorkTime = 'log_work_time';
     case CloseContractMonths = 'close_contract_months';
+    case ManageNotifications = 'manage_notifications';
     case CreateRequests = 'create_requests';
     case ViewCompanyRequests = 'view_company_requests';
     case CommentOnRequests = 'comment_on_requests';

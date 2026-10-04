@@ -1,5 +1,5 @@
 <x-layouts::app.sidebar :title="$title ?? null">
-    <main class="[grid-area:main] p-6 lg:p-8" data-flux-main>
+    <main id="desk-main" class="desk-main" tabindex="-1">
         {{ $slot }}
     </main>
 </x-layouts::app.sidebar>

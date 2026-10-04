@@ -1,0 +1,38 @@
+name: approid-desk-memory
+
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:0.10.2@sha256:d1840062a5b79940ab7a9f4809ceb90fc776d4ad737cd9329e9b5836cc64ab70
+    restart: unless-stopped
+    shm_size: 1gb
+    ports:
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9999:9999"
+    env_file:
+      - path: ${HINDSIGHT_ENV_FILE:?Set HINDSIGHT_ENV_FILE to the external local hindsight.env}
+        format: raw
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: gemini
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: local
+      HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL: BAAI/bge-small-en-v1.5
+      HINDSIGHT_API_RERANKER_PROVIDER: local
+      HINDSIGHT_API_RERANKER_LOCAL_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+      HINDSIGHT_API_MCP_ENABLED: "true"
+      HINDSIGHT_API_LLM_PROMPT_CACHE_ENABLED: "false"
+      HINDSIGHT_API_LOG_LEVEL: warning
+      HINDSIGHT_API_LLM_HTTP_LOG_LEVEL: WARNING
+    volumes:
+      - memory:/home/hindsight/.pg0
+    # Avoid persistent logs containing provider errors or user memory text.
+    logging:
+      driver: none
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+volumes:
+  memory:
+    name: approid-desk-hindsight-data

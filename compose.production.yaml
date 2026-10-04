@@ -1,0 +1,86 @@
+name: approid-desk
+
+services:
+    app:
+        build:
+            context: .
+            dockerfile: docker/production/Dockerfile
+        image: approid-desk:production
+        restart: unless-stopped
+        init: true
+        env_file:
+            - '${APP_ENV_FILE:-.env.production}'
+        ports:
+            - '127.0.0.1:${APP_BIND_PORT:-8080}:8080'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        volumes:
+            - app-storage:/var/www/html/storage
+        depends_on:
+            mysql:
+                condition: service_healthy
+            clamav:
+                condition: service_healthy
+        healthcheck:
+            test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:8080/up']
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+        networks:
+            - approid-desk
+
+    mysql:
+        image: mysql:8.4
+        restart: unless-stopped
+        command:
+            - --log-bin-trust-function-creators=1
+        env_file:
+            - '${DATABASE_ENV_FILE:-.env.database}'
+        volumes:
+            - mysql-data:/var/lib/mysql
+        healthcheck:
+            test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent']
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+        networks:
+            - approid-desk
+
+    clamav:
+        image: clamav/clamav:1.4
+        restart: unless-stopped
+        volumes:
+            - clamav-data:/var/lib/clamav
+        healthcheck:
+            test: ['CMD', '/usr/local/bin/clamdcheck.sh']
+            interval: 30s
+            timeout: 10s
+            retries: 10
+            start_period: 120s
+        networks:
+            - approid-desk
+
+    tunnel:
+        image: cloudflare/cloudflared@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+        profiles:
+            - tunnel
+        restart: unless-stopped
+        init: true
+        env_file:
+            - ./secrets/tunnel.env
+        command: tunnel --no-autoupdate run
+        network_mode: host
+        depends_on:
+            app:
+                condition: service_healthy
+
+networks:
+    approid-desk:
+        driver: bridge
+
+volumes:
+    app-storage:
+    mysql-data:
+    clamav-data:

@@ -2,10 +2,14 @@
 
 namespace App\Observers;
 
+use App\Actions\SendBusinessNotification;
+use App\Enums\NotificationType;
 use App\Enums\WorkRequestActivityType;
 use App\Enums\WorkRequestStatus;
 use App\Models\ServiceContract;
+use App\Models\User;
 use App\Models\WorkRequest;
+use App\Models\WorkRequestActivity;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -36,6 +40,10 @@ class WorkRequestObserver
 
     public function saving(WorkRequest $workRequest): void
     {
+        if ($workRequest->exists && $workRequest->isDirty('status')) {
+            throw ValidationException::withMessages(['status' => '상태 변경 서비스를 통해 변경해 주세요.']);
+        }
+
         if (! $workRequest->isDirty(['status', 'service_contract_id', 'company_id'])
             || ! in_array($workRequest->status, [WorkRequestStatus::Queued, WorkRequestStatus::InProgress], true)) {
             return;
@@ -67,7 +75,7 @@ class WorkRequestObserver
     {
         $changes = Arr::except($workRequest->getChanges(), ['updated_at']);
 
-        $this->recordChange(
+        $assignmentActivity = $this->recordChange(
             $workRequest,
             Arr::only($changes, ['assigned_to']),
             WorkRequestActivityType::AssigneeChanged,
@@ -85,6 +93,16 @@ class WorkRequestObserver
             WorkRequestActivityType::RequestUpdated,
             '요청 내용이 수정되었습니다.',
         );
+
+        if (array_key_exists('assigned_to', $changes) && $workRequest->assigned_to !== null) {
+            $authenticated = Auth::user();
+            (new SendBusinessNotification)->handle(
+                NotificationType::RequestAssigned,
+                $workRequest,
+                $authenticated instanceof User ? $authenticated : null,
+                ['activity_id' => $assignmentActivity?->id],
+            );
+        }
     }
 
     /**
@@ -95,9 +113,9 @@ class WorkRequestObserver
         array $changes,
         WorkRequestActivityType $type,
         string $summary,
-    ): void {
+    ): ?WorkRequestActivity {
         if ($changes === []) {
-            return;
+            return null;
         }
 
         $before = [];
@@ -108,7 +126,7 @@ class WorkRequestObserver
             $after[$attribute] = $workRequest->getAttributes()[$attribute] ?? null;
         }
 
-        $workRequest->activities()->create([
+        return $workRequest->activities()->create([
             'company_id' => $workRequest->company_id,
             'actor_id' => $this->actorId(),
             'type' => $type,

@@ -80,10 +80,7 @@ class ProjectController extends Controller
             'totalRequests' => $project->workRequests()->count(),
             'openRequests' => $project->workRequests()->whereNotIn('status', $terminalStatuses)->count(),
             'completedRequests' => $project->workRequests()->where('status', WorkRequestStatus::Completed->value)->count(),
-            'urgentRequests' => $project->workRequests()
-                ->where('is_urgent', true)
-                ->whereNotIn('status', $terminalStatuses)
-                ->count(),
+            'majorIncidents' => $project->workRequests()->majorIncidents()->count(),
         ];
 
         $recentRequests = $project->workRequests()

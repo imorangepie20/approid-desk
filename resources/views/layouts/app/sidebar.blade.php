@@ -1,125 +1,52 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
-    <head>
-        @include('partials.head')
-    </head>
-    <body class="min-h-screen bg-white dark:bg-zinc-800">
-        <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-            <flux:sidebar.header>
-                <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
-                <flux:sidebar.collapse class="lg:hidden" />
-            </flux:sidebar.header>
-
-            <flux:sidebar.nav>
-                <flux:sidebar.group heading="업무" class="grid">
-                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                        대시보드
-                    </flux:sidebar.item>
-
-                    @can(\App\Enums\Permission::ManageCompanies->value)
-                        <flux:sidebar.item icon="building-office-2" :href="route('companies.index')" :current="request()->routeIs('companies.*')" wire:navigate>
-                            고객사 관리
-                        </flux:sidebar.item>
-                    @elsecan(\App\Enums\Permission::ManageCompanyUsers->value)
-                        @if (auth()->user()->company_id !== null)
-                            <flux:sidebar.item icon="users" :href="route('companies.show', auth()->user()->company_id)" :current="request()->routeIs('companies.show')" wire:navigate>
-                                자사 사용자
-                            </flux:sidebar.item>
-                        @endif
-                    @endcan
-
-                    @can('viewAny', \App\Models\Project::class)
-                        <flux:sidebar.item icon="folder-open" :href="route('projects.index')" :current="request()->routeIs('projects.*')" wire:navigate>
-                            프로젝트
-                        </flux:sidebar.item>
-                    @endcan
-
-                    @can('viewAny', \App\Models\WorkRequest::class)
-                        <flux:sidebar.item icon="clipboard-document-list" :href="route('requests.index')" :current="request()->routeIs('requests.*')" wire:navigate>
-                            요청
-                        </flux:sidebar.item>
-                    @endcan
-                </flux:sidebar.group>
-            </flux:sidebar.nav>
-
-            <flux:spacer />
-
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
-
-            <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
-        </flux:sidebar>
-
-        <!-- Mobile User Menu -->
-        <flux:header class="lg:hidden">
-            <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
-
-            <flux:spacer />
-
-            <flux:dropdown position="top" align="end">
-                <flux:profile
-                    :initials="auth()->user()->initials()"
-                    icon-trailing="chevron-down"
-                />
-
-                <flux:menu>
-                    <flux:menu.radio.group>
-                        <div class="p-0 text-sm font-normal">
-                            <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
-                                <flux:avatar
-                                    :name="auth()->user()->name"
-                                    :initials="auth()->user()->initials()"
-                                />
-
-                                <div class="grid flex-1 text-start text-sm leading-tight">
-                                    <flux:heading class="truncate">{{ auth()->user()->name }}</flux:heading>
-                                    <flux:text class="truncate">{{ auth()->user()->email }}</flux:text>
-                                </div>
-                            </div>
-                        </div>
-                    </flux:menu.radio.group>
-
-                    <flux:menu.separator />
-
-                    <flux:menu.radio.group>
-                        <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
-                            {{ __('Settings') }}
-                        </flux:menu.item>
-                    </flux:menu.radio.group>
-
-                    <flux:menu.separator />
-
-                    <form method="POST" action="{{ route('logout') }}" class="w-full">
-                        @csrf
-                        <flux:menu.item
-                            as="button"
-                            type="submit"
-                            icon="arrow-right-start-on-rectangle"
-                            class="w-full cursor-pointer"
-                            data-test="logout-button"
-                        >
-                            {{ __('Log out') }}
-                        </flux:menu.item>
-                    </form>
-                </flux:menu>
-            </flux:dropdown>
-        </flux:header>
-
-        {{ $slot }}
-
-        @persist('toast')
-            <flux:toast.group>
-                <flux:toast />
-            </flux:toast.group>
-        @endpersist
-
+    <head>@include('partials.head')</head>
+    <body class="desk-shell"
+        x-data="{ collapsed: localStorage.getItem('desk.sidebar.collapsed') === 'true', mobileOpen: false, mobile: window.innerWidth < 1024 }"
+        x-init="$watch('collapsed', value => localStorage.setItem('desk.sidebar.collapsed', value))"
+        @resize.window="mobile = window.innerWidth < 1024; if (!mobile) mobileOpen = false"
+        @keydown.escape.window="mobileOpen = false"
+        :class="{ 'desk-collapsed': collapsed, 'desk-mobile-open': mobileOpen }">
+        <a href="#desk-main" class="desk-skip">본문으로 건너뛰기</a>
+        <button x-cloak x-show="mobile && mobileOpen" @click="mobileOpen = false" class="desk-backdrop" aria-label="메뉴 닫기" tabindex="-1"></button>
+        <aside id="desk-sidebar" class="desk-sidebar" data-test="desk-sidebar" aria-label="업무 메뉴"
+            :inert="mobile && !mobileOpen" x-trap.noscroll="mobile && mobileOpen">
+            <div class="desk-brand">
+                <a href="{{ route('dashboard') }}" wire:navigate aria-label="Approid Desk 대시보드" class="flex items-center gap-3">
+                    <span class="desk-brand-mark">A</span><span class="desk-nav-label font-semibold text-lg">APPROID DESK</span>
+                </a>
+                <button type="button" class="desk-mobile-close" @click="mobileOpen = false" aria-label="메뉴 닫기"><flux:icon.x-mark class="size-5" /></button>
+            </div>
+            <nav class="desk-navigation" aria-label="주 메뉴">
+                <x-desk-nav-item :href="route('dashboard')" :active="request()->routeIs('dashboard')" icon="home" label="대시보드" />
+                @can(\App\Enums\Permission::ManageCompanies->value)
+                    <x-desk-nav-item :href="route('companies.index')" :active="request()->routeIs('companies.*')" icon="building-office-2" label="고객사 관리" />
+                @elsecan(\App\Enums\Permission::ManageCompanyUsers->value)
+                    @if (auth()->user()->company_id !== null)
+                        <x-desk-nav-item :href="route('companies.show', auth()->user()->company_id)" :active="request()->routeIs('companies.*')" icon="users" label="자사 사용자" />
+                    @endif
+                @endcan
+                @can('viewAny', \App\Models\Project::class)
+                    <x-desk-nav-item :href="route('projects.index')" :active="request()->routeIs('projects.*')" icon="folder-open" label="프로젝트" />
+                @endcan
+                @can('viewAny', \App\Models\WorkRequest::class)
+                    <x-desk-nav-item :href="route('requests.index')" :active="request()->routeIs('requests.*')" icon="clipboard-document-list" label="요청" />
+                @endcan
+                @can(\App\Enums\Permission::ViewUsage->value)
+                    <x-desk-nav-item :href="route('usage.index')" :active="request()->routeIs('usage.*')" icon="clock" label="월 사용내역" />
+                @endcan
+                @can(\App\Enums\Permission::ManageNotifications->value)
+                    <x-desk-nav-item :href="route('notification-deliveries.index')" :active="request()->routeIs('notification-deliveries.*')" icon="paper-airplane" label="알림 발송" />
+                @endcan
+                <div class="desk-nav-divider"></div>
+                <x-desk-nav-item :href="route('profile.edit')" :active="request()->routeIs('*.edit', 'appearance')" icon="cog-6-tooth" label="설정" />
+            </nav>
+        </aside>
+        <div class="desk-content" :inert="mobile && mobileOpen">
+            @include('layouts.app.header')
+            {{ $slot }}
+        </div>
+        @persist('toast')<flux:toast.group><flux:toast /></flux:toast.group>@endpersist
         @fluxScripts
     </body>
 </html>

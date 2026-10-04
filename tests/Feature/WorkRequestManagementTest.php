@@ -185,6 +185,50 @@ class WorkRequestManagementTest extends TestCase
             ->assertSee('data-test="request-activities"', false);
     }
 
+    public function test_detail_prominently_marks_only_an_open_major_incident(): void
+    {
+        $this->travelTo('2026-10-04 09:30:00');
+        $customer = User::factory()->customerUser()->create();
+        $incident = WorkRequest::factory()->urgent()->withSignedContract()->for($customer->company)->create([
+            'submitted_by' => $customer->id,
+            'title' => '결제 업무 중단',
+            'requested_at' => '2026-10-04 09:00:00',
+            'registered_at' => '2026-10-04 09:00:00',
+        ]);
+
+        $this->actingAs($customer)->get(route('requests.show', $incident))
+            ->assertOk()
+            ->assertSee('data-test="major-incident-notice"', false)
+            ->assertSee('data-test="major-incident-response-target"', false)
+            ->assertSee('주요 업무 장애로 우선 대응 중입니다.')
+            ->assertSee('2026.10.04 10:00')
+            ->assertSee('목표 응답 대기')
+            ->assertSee('60분은 운영 우선순위를 위한 내부 목표이며 계약상 응답시간 보장이 아닙니다.')
+            ->assertSee('자동 약정 없음')
+            ->assertSee('계약 문서의 별도 약정은 Desk가 자동 해석하지 않습니다.')
+            ->assertDontSee('최초 응답 기한');
+
+        $this->travelTo('2026-10-04 10:00:01');
+        $this->get(route('requests.show', $incident))
+            ->assertOk()
+            ->assertSee('내부 목표 경과');
+
+        $completedIncident = WorkRequest::factory()->urgent()->for($customer->company)->create([
+            'submitted_by' => $customer->id,
+            'status' => WorkRequestStatus::Completed,
+            'title' => '복구 완료된 장애',
+            'requested_at' => '2026-10-04 08:00:00',
+            'registered_at' => '2026-10-04 08:00:00',
+        ]);
+
+        $this->get(route('requests.show', $completedIncident))
+            ->assertOk()
+            ->assertSee('주요 장애')
+            ->assertSee('data-test="major-incident-response-record"', false)
+            ->assertSee('2026.10.04 09:00')
+            ->assertDontSee('data-test="major-incident-notice"', false);
+    }
+
     public function test_customer_cannot_view_or_comment_on_another_company_request(): void
     {
         $customer = User::factory()->customerUser()->create();

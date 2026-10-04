@@ -11,6 +11,10 @@
 .env
 .env.backup
 .env.production
+.env.database
+!.env.production.example
+!.env.database.example
+/secrets/
 .phpactor.json
 .phpunit.result.cache
 Homestead.json

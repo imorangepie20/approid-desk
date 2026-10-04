@@ -3,9 +3,11 @@
 namespace App\Policies;
 
 use App\Enums\Permission;
+use App\Enums\WorkRequestStatus;
 use App\Models\User;
 use App\Models\WorkRequest;
 use App\Policies\Concerns\ChecksCompanyScope;
+use App\Services\WorkRequestActionRules;
 
 class WorkRequestPolicy
 {
@@ -39,5 +41,10 @@ class WorkRequestPolicy
     public function delete(User $user, WorkRequest $workRequest): bool
     {
         return $this->update($user, $workRequest);
+    }
+
+    public function transition(User $user, WorkRequest $workRequest, WorkRequestStatus $to): bool
+    {
+        return $this->view($user, $workRequest) && (new WorkRequestActionRules)->allows($user, $workRequest, $to);
     }
 }

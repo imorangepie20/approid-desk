@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, WorkRequest> $workRequests
  * @property-read Collection<int, WorkRequestComment> $workRequestComments
  * @property-read Collection<int, WorkRequestActivity> $workRequestActivities
+ * @property-read Collection<int, WeeklyProgressReport> $weeklyProgressReports
  */
 #[Fillable([
     'name',
@@ -104,6 +105,12 @@ class Company extends Model
     public function workRequestActivities(): HasMany
     {
         return $this->hasMany(WorkRequestActivity::class);
+    }
+
+    /** @return HasMany<WeeklyProgressReport, $this> */
+    public function weeklyProgressReports(): HasMany
+    {
+        return $this->hasMany(WeeklyProgressReport::class);
     }
 
     protected function companyVisibilityColumn(): string

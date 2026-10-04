@@ -15,11 +15,67 @@ use App\Policies\UserPolicy;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CustomerRolePolicyTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** @return array<string, array{UserRole, list<Permission>}> */
+    public static function rolePermissions(): array
+    {
+        return [
+            'super administrator' => [UserRole::SuperAdmin, Permission::cases()],
+            'operator' => [UserRole::Operator, [
+                Permission::ManageCompanies,
+                Permission::ManageCompanyUsers,
+                Permission::ManageCompanyRequests,
+                Permission::ManageContracts,
+                Permission::CreateEstimates,
+                Permission::ManageWork,
+                Permission::LogWorkTime,
+                Permission::CloseContractMonths,
+                Permission::ManageNotifications,
+                Permission::CreateRequests,
+                Permission::ViewCompanyRequests,
+                Permission::CommentOnRequests,
+                Permission::ViewUsage,
+            ]],
+            'customer administrator' => [UserRole::CustomerAdmin, [
+                Permission::ManageCompanyUsers,
+                Permission::ManageCompanyRequests,
+                Permission::CreateRequests,
+                Permission::ViewCompanyRequests,
+                Permission::CommentOnRequests,
+                Permission::ApproveEstimates,
+                Permission::CompleteReviews,
+                Permission::ViewUsage,
+            ]],
+            'customer user' => [UserRole::CustomerUser, [
+                Permission::CreateRequests,
+                Permission::ViewCompanyRequests,
+                Permission::CommentOnRequests,
+            ]],
+        ];
+    }
+
+    #[DataProvider('rolePermissions')]
+    public function test_each_role_has_exactly_its_documented_gate_permissions(UserRole $role, array $expected): void
+    {
+        $user = User::factory()->create([
+            'role' => $role,
+            'company_id' => $role->isSystemRole() ? null : Company::factory(),
+        ]);
+
+        foreach (Permission::cases() as $permission) {
+            $this->assertSame(
+                in_array($permission, $expected, true),
+                Gate::forUser($user)->allows($permission->value),
+                "Unexpected {$role->value} access to {$permission->value}.",
+            );
+        }
+    }
 
     public function test_role_permissions_are_registered_as_gate_abilities(): void
     {

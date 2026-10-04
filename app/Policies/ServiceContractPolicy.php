@@ -20,4 +20,9 @@ class ServiceContractPolicy
     {
         return $this->hasCompanyPermission($user, Permission::ManageContracts, $contract->company_id);
     }
+
+    public function provideMonth(User $user, ServiceContract $contract): bool
+    {
+        return $this->hasCompanyPermission($user, Permission::ManageContracts, $contract->company_id);
+    }
 }

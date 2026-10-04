@@ -24,6 +24,8 @@ services:
         depends_on:
             mysql:
                 condition: service_healthy
+            clamav:
+                condition: service_healthy
     queue:
         image: 'sail-8.4/app'
         environment:
@@ -36,7 +38,9 @@ services:
         depends_on:
             mysql:
                 condition: service_healthy
-        command: php artisan queue:work --verbose --tries=3 --timeout=90
+            clamav:
+                condition: service_healthy
+        command: php artisan queue:work --verbose --tries=3 --timeout=75
     scheduler:
         image: 'sail-8.4/app'
         environment:
@@ -52,6 +56,9 @@ services:
         command: php artisan schedule:work
     mysql:
         image: 'mysql:8.4'
+        # Local Sail only: migrations create immutable-estimate triggers.
+        # Do not reuse this trust setting for a production database.
+        command: ['mysqld', '--log-bin-trust-function-creators=1']
         ports:
             - '127.0.0.1:${FORWARD_DB_PORT:-3306}:3306'
         environment:
@@ -75,9 +82,17 @@ services:
                 - '-p${DB_PASSWORD}'
             retries: 3
             timeout: 5s
+    clamav:
+        image: 'clamav/clamav:1.4'
+        volumes:
+            - 'clamav-data:/var/lib/clamav'
+        networks:
+            - sail
 networks:
     sail:
         driver: bridge
 volumes:
     sail-mysql:
+        driver: local
+    clamav-data:
         driver: local

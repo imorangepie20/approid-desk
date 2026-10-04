@@ -2,6 +2,8 @@
 
 namespace App\Observers;
 
+use App\Actions\SendBusinessNotification;
+use App\Enums\NotificationType;
 use App\Enums\WorkRequestActivityType;
 use App\Models\WorkRequestComment;
 
@@ -19,5 +21,12 @@ class WorkRequestCommentObserver
             'after_values' => ['body' => $comment->body],
             'occurred_at' => now(),
         ]);
+
+        (new SendBusinessNotification)->handle(
+            NotificationType::CommentCreated,
+            $comment->workRequest,
+            $comment->author,
+            ['comment_id' => $comment->id],
+        );
     }
 }

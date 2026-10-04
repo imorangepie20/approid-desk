@@ -53,6 +53,7 @@ enum UserRole: string
                 Permission::ManageWork,
                 Permission::LogWorkTime,
                 Permission::CloseContractMonths,
+                Permission::ManageNotifications,
                 Permission::CreateRequests,
                 Permission::ViewCompanyRequests,
                 Permission::CommentOnRequests,

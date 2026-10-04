@@ -95,7 +95,7 @@ class ProjectManagementTest extends TestCase
                 'totalRequests' => 3,
                 'openRequests' => 2,
                 'completedRequests' => 1,
-                'urgentRequests' => 1,
+                'majorIncidents' => 1,
             ])
             ->assertSee('상세 프로젝트')
             ->assertSee('상세 고객사')
@@ -116,11 +116,17 @@ class ProjectManagementTest extends TestCase
         $project = Project::factory()->for($company)->create();
 
         foreach (range(1, 11) as $day) {
-            $this->createRequest($company, $project, WorkRequestStatus::Received, false, "프로젝트 요청 {$day}")
-                ->update([
-                    'requested_at' => now()->subDays(11 - $day),
-                    'late_entry_reason' => '최신순 검증용 과거 요청',
-                ]);
+            $workRequest = $this->createRequest(
+                $company,
+                $project,
+                WorkRequestStatus::Received,
+                false,
+                "프로젝트 요청 {$day}",
+            );
+            $workRequest->update([
+                'requested_at' => $workRequest->registered_at->subDays(11 - $day),
+                'late_entry_reason' => '최신순 검증용 과거 요청',
+            ]);
         }
 
         $this->actingAs($customer)

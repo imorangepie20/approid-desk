@@ -32,11 +32,22 @@ class WorkRequestStatusTest extends TestCase
 
     public function test_only_completed_and_cancelled_are_terminal_statuses(): void
     {
-        $this->assertTrue(WorkRequestStatus::Completed->isTerminal());
-        $this->assertTrue(WorkRequestStatus::Cancelled->isTerminal());
+        $actual = [];
 
-        $this->assertFalse(WorkRequestStatus::Received->isTerminal());
-        $this->assertFalse(WorkRequestStatus::InProgress->isTerminal());
-        $this->assertFalse(WorkRequestStatus::OnHold->isTerminal());
+        foreach (WorkRequestStatus::cases() as $status) {
+            $actual[$status->value] = $status->isTerminal();
+        }
+
+        $this->assertSame([
+            'received' => false,
+            'estimating' => false,
+            'awaiting_approval' => false,
+            'queued' => false,
+            'in_progress' => false,
+            'awaiting_review' => false,
+            'completed' => true,
+            'on_hold' => false,
+            'cancelled' => true,
+        ], $actual);
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Models;
 
 use App\Enums\IntakeChannel;
+use App\Enums\MajorIncidentResponseStatus;
 use App\Enums\UserRole;
 use App\Enums\WorkRequestPriority;
 use App\Enums\WorkRequestStatus;
@@ -11,6 +12,7 @@ use App\Models\Company;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkRequest;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -32,6 +34,69 @@ class WorkRequestTest extends TestCase
         $this->assertFalse($workRequest->is_urgent);
         $this->assertNotNull($workRequest->requested_at);
         $this->assertNotNull($workRequest->registered_at);
+    }
+
+    public function test_major_incident_scope_only_contains_open_urgent_requests_and_priority_scope_puts_them_first(): void
+    {
+        $incident = WorkRequest::factory()->urgent()->create([
+            'requested_at' => '2026-10-01 09:00:00',
+            'registered_at' => '2026-10-01 09:00:00',
+        ]);
+        $regular = WorkRequest::factory()->create([
+            'requested_at' => '2026-10-03 12:00:00',
+            'registered_at' => '2026-10-03 12:00:00',
+        ]);
+        $completedUrgent = WorkRequest::factory()->urgent()->create([
+            'status' => WorkRequestStatus::Completed,
+            'requested_at' => '2026-10-03 11:00:00',
+            'registered_at' => '2026-10-03 11:00:00',
+        ]);
+
+        $this->assertTrue($incident->isMajorIncident());
+        $this->assertFalse($regular->isMajorIncident());
+        $this->assertFalse($completedUrgent->isMajorIncident());
+        $this->assertSame([$incident->id], WorkRequest::query()->majorIncidents()->pluck('id')->all());
+        $this->assertSame(
+            [$incident->id, $regular->id, $completedUrgent->id],
+            WorkRequest::query()->majorIncidentsFirst()->latest('requested_at')->latest('id')->pluck('id')->all(),
+        );
+    }
+
+    public function test_major_incident_first_response_target_uses_the_actual_request_time_and_an_exact_sixty_minute_boundary(): void
+    {
+        $incident = WorkRequest::factory()->urgent()->create([
+            'requested_at' => '2026-10-04 09:00:00',
+            'registered_at' => '2026-10-04 09:40:00',
+        ]);
+        $regular = WorkRequest::factory()->create([
+            'requested_at' => '2026-10-04 09:00:00',
+            'registered_at' => '2026-10-04 09:00:00',
+        ]);
+        $completedIncident = WorkRequest::factory()->urgent()->create([
+            'status' => WorkRequestStatus::Completed,
+            'requested_at' => '2026-10-04 09:00:00',
+            'registered_at' => '2026-10-04 09:00:00',
+        ]);
+
+        $this->assertSame('2026-10-04 10:00:00', $incident->majorIncidentFirstResponseTargetAt()?->format('Y-m-d H:i:s'));
+        $this->assertNull($regular->majorIncidentFirstResponseTargetAt());
+        $this->assertFalse($incident->hasMajorIncidentFirstResponseTargetElapsed(CarbonImmutable::parse('2026-10-04 10:00:00')));
+        $this->assertSame(MajorIncidentResponseStatus::Pending, $incident->majorIncidentFirstResponseTargetStatus(CarbonImmutable::parse('2026-10-04 10:00:00')));
+        $this->assertTrue($incident->hasMajorIncidentFirstResponseTargetElapsed(CarbonImmutable::parse('2026-10-04 10:00:01')));
+        $this->assertSame(MajorIncidentResponseStatus::Overdue, $incident->majorIncidentFirstResponseTargetStatus(CarbonImmutable::parse('2026-10-04 10:00:01')));
+        $this->assertSame('2026-10-04 10:00:00', $completedIncident->majorIncidentFirstResponseTargetAt()?->format('Y-m-d H:i:s'));
+        $this->assertFalse($completedIncident->hasMajorIncidentFirstResponseTargetElapsed(CarbonImmutable::parse('2026-10-04 11:00:00')));
+        $this->assertSame(MajorIncidentResponseStatus::Unrecorded, $completedIncident->majorIncidentFirstResponseTargetStatus(CarbonImmutable::parse('2026-10-04 11:00:00')));
+    }
+
+    public function test_major_incident_response_target_is_never_turned_into_a_contract_commitment_automatically(): void
+    {
+        $withoutContract = WorkRequest::factory()->urgent()->create();
+        $withSignedContract = WorkRequest::factory()->urgent()->withSignedContract()->create();
+
+        $this->assertFalse($withoutContract->majorIncidentResponseTargetIsContractual());
+        $this->assertFalse($withSignedContract->majorIncidentResponseTargetIsContractual());
+        $this->assertNotNull($withSignedContract->serviceContract);
     }
 
     public function test_company_and_project_relationships_only_return_their_requests(): void

@@ -8,28 +8,31 @@ use App\Models\Company;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\WorkRequest;
+use App\Services\CustomerCompanyTimeOverview;
+use App\Services\OperatorCompanyTimeOverview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): View
-    {
+    public function __invoke(
+        Request $request,
+        OperatorCompanyTimeOverview $operatorTimeOverview,
+        CustomerCompanyTimeOverview $customerTimeOverview,
+    ): View {
         $user = $request->user();
 
         abort_unless($user instanceof User && $user->canAccessWorkspace(), 403);
 
         if (! $user->role->isSystemRole()) {
-            return $this->customerDashboard($user);
+            return $this->customerDashboard($user, $customerTimeOverview);
         }
 
-        return $this->operatorDashboard($user);
+        return $this->operatorDashboard($user, $operatorTimeOverview);
     }
 
-    private function operatorDashboard(User $user): View
+    private function operatorDashboard(User $user, OperatorCompanyTimeOverview $timeOverview): View
     {
-        $openStatuses = $this->openRequestStatuses();
-
         $metrics = [
             'activeCompanies' => Company::query()
                 ->visibleTo($user)
@@ -39,40 +42,49 @@ class DashboardController extends Controller
                 ->visibleTo($user)
                 ->where('status', WorkRequestStatus::Received->value)
                 ->count(),
-            'urgentRequests' => WorkRequest::query()
+            'majorIncidents' => WorkRequest::query()
                 ->visibleTo($user)
-                ->where('is_urgent', true)
-                ->whereIn('status', $openStatuses)
+                ->majorIncidents()
                 ->count(),
             'inProgressRequests' => WorkRequest::query()
                 ->visibleTo($user)
                 ->where('status', WorkRequestStatus::InProgress->value)
                 ->count(),
+            'awaitingApprovalRequests' => WorkRequest::query()->visibleTo($user)
+                ->where('status', WorkRequestStatus::AwaitingApproval->value)->count(),
+            'awaitingReviewRequests' => WorkRequest::query()->visibleTo($user)
+                ->where('status', WorkRequestStatus::AwaitingReview->value)->count(),
         ];
 
-        $urgentRequests = WorkRequest::query()
+        $majorIncidents = WorkRequest::query()
             ->visibleTo($user)
-            ->with(['company:id,name', 'project:id,name'])
-            ->where('is_urgent', true)
-            ->whereIn('status', $openStatuses)
-            ->latest('requested_at')
+            ->with(['company:id,name', 'project:id,name', 'firstResponseEvent'])
+            ->majorIncidents()
+            ->oldest('requested_at')
+            ->oldest('id')
             ->limit(5)
             ->get();
+        $companyTime = $timeOverview->forMonth($user, today());
 
         return view('dashboard.operator', [
             'metrics' => $metrics,
-            'urgentRequests' => $urgentRequests,
+            'awaitingApprovalRequests' => WorkRequest::query()->visibleTo($user)
+                ->with(['company:id,name', 'project:id,name'])
+                ->where('status', WorkRequestStatus::AwaitingApproval->value)
+                ->oldest('requested_at')->oldest('id')->limit(5)->get(),
+            'awaitingReviewRequests' => WorkRequest::query()->visibleTo($user)
+                ->with(['company:id,name', 'project:id,name'])
+                ->where('status', WorkRequestStatus::AwaitingReview->value)
+                ->oldest('requested_at')->oldest('id')->limit(5)->get(),
+            'majorIncidents' => $majorIncidents,
+            'companyTime' => $companyTime,
             'asOf' => now()->format('Y년 n월 j일'),
         ]);
     }
 
-    private function customerDashboard(User $user): View
+    private function customerDashboard(User $user, CustomerCompanyTimeOverview $timeOverview): View
     {
-        abort_unless($user->company_id !== null, 403);
-
-        $companyName = $user->company()->value('name');
-
-        abort_unless(is_string($companyName), 403);
+        $customerTime = $timeOverview->forMonth($user, today());
 
         $metrics = [
             'activeProjects' => Project::query()
@@ -82,6 +94,10 @@ class DashboardController extends Controller
             'openRequests' => WorkRequest::query()
                 ->visibleTo($user)
                 ->whereIn('status', $this->openRequestStatuses())
+                ->count(),
+            'majorIncidents' => WorkRequest::query()
+                ->visibleTo($user)
+                ->majorIncidents()
                 ->count(),
             'awaitingApprovalRequests' => WorkRequest::query()
                 ->visibleTo($user)
@@ -106,11 +122,22 @@ class DashboardController extends Controller
             ->limit(8)
             ->get();
 
+        $majorIncidents = WorkRequest::query()
+            ->visibleTo($user)
+            ->with(['company:id,name', 'project:id,name', 'firstResponseEvent'])
+            ->majorIncidents()
+            ->oldest('requested_at')
+            ->oldest('id')
+            ->limit(5)
+            ->get();
+
         return view('dashboard.customer', [
-            'companyName' => $companyName,
+            'companyName' => $customerTime['company']->name,
+            'customerTime' => $customerTime,
             'metrics' => $metrics,
             'projects' => $projects,
             'recentRequests' => $recentRequests,
+            'majorIncidents' => $majorIncidents,
             'asOf' => now()->format('Y년 n월 j일'),
         ]);
     }

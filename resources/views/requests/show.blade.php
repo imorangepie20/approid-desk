@@ -6,6 +6,14 @@
             \App\Enums\WorkRequestStatus::OnHold, \App\Enums\WorkRequestStatus::AwaitingApproval => 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300',
             default => 'bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300',
         };
+        $responseTargetAt = $workRequest->majorIncidentFirstResponseTargetAt();
+        $responseStatus = $workRequest->majorIncidentFirstResponseTargetStatus();
+        $responseStatusClass = match ($responseStatus) {
+            \App\Enums\MajorIncidentResponseStatus::Met => 'text-emerald-700 dark:text-emerald-300',
+            \App\Enums\MajorIncidentResponseStatus::Pending => 'text-amber-800 dark:text-amber-200',
+            \App\Enums\MajorIncidentResponseStatus::Overdue, \App\Enums\MajorIncidentResponseStatus::Late => 'text-red-800 dark:text-red-200',
+            default => 'text-zinc-600 dark:text-zinc-300',
+        };
     @endphp
 
     <div class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6">
@@ -19,7 +27,7 @@
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                         <h1 class="break-words text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">{{ $workRequest->title }}</h1>
                         @if ($workRequest->is_urgent)
-                            <span class="inline-flex rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">긴급</span>
+                            <span class="inline-flex rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 dark:bg-red-400/10 dark:text-red-300">주요 장애</span>
                         @endif
                     </div>
                     <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{{ $workRequest->company->name }} · {{ $workRequest->project->name }}</p>
@@ -30,6 +38,25 @@
                 </div>
             </div>
         </header>
+
+        @if ($workRequest->isMajorIncident())
+            <div class="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-400/30 dark:bg-red-400/[0.08]" data-test="major-incident-notice">
+                <flux:icon.exclamation-triangle class="mt-0.5 size-5 shrink-0 text-red-700 dark:text-red-300" />
+                <div class="min-w-0 flex-1">
+                    <p class="font-semibold text-red-900 dark:text-red-100">주요 업무 장애로 우선 대응 중입니다.</p>
+                    <p class="mt-1 text-sm text-red-800 dark:text-red-200">업무 중단 영향이 있어 일반 요청보다 먼저 확인하는 요청입니다.</p>
+                    <p class="mt-1 text-sm text-red-800 dark:text-red-200">60분은 운영 우선순위를 위한 내부 목표이며 계약상 응답시간 보장이 아닙니다.</p>
+                    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-red-200 pt-3 text-sm dark:border-red-400/20" data-test="major-incident-response-target">
+                        <span class="font-medium text-red-900 dark:text-red-100">내부 최초 응답 목표</span>
+                        <time datetime="{{ $responseTargetAt?->toAtomString() }}" class="font-mono text-red-900 dark:text-red-100">{{ $responseTargetAt?->format('Y.m.d H:i') }}</time>
+                        <span class="font-semibold {{ $responseStatusClass }}">{{ $responseStatus?->label() }}</span>
+                        @if ($workRequest->firstResponseEvent)
+                            <span class="text-red-800 dark:text-red-200">응답 <time datetime="{{ $workRequest->firstResponseEvent->occurred_at->toAtomString() }}" class="font-mono">{{ $workRequest->firstResponseEvent->occurred_at->format('Y.m.d H:i') }}</time></span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
 
         @if (session('success'))
             <div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200">
@@ -46,6 +73,12 @@
                     </div>
                     <div class="mt-5 whitespace-pre-wrap break-words text-sm leading-7 text-zinc-800 dark:text-zinc-200">{{ $workRequest->requirements }}</div>
                 </section>
+
+                @include('requests.partials.major-incident-history')
+
+                @include('requests.partials.major-incident-rollbacks')
+
+                @include('requests.partials.estimate-history')
 
                 <section id="comments" class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700/80 dark:bg-[#141B2D]" aria-labelledby="comments-heading" data-test="request-comments">
                     <div class="border-b border-zinc-200 px-5 py-4 dark:border-zinc-700/80">
@@ -88,7 +121,11 @@
                 </section>
             </div>
 
-            <aside class="space-y-6 xl:sticky xl:top-6">
+            <aside class="space-y-6 xl:sticky xl:top-20">
+                @can('create', [\App\Models\WorkLog::class, $workRequest])
+                    <flux:button :href="route('requests.work-logs.index', $workRequest)" icon="clock">작업시간</flux:button>
+                @endcan
+                @include('requests.partials.actions')
                 <section class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700/80 dark:bg-[#141B2D]" aria-labelledby="request-info-heading">
                     <h2 id="request-info-heading" class="font-semibold text-zinc-950 dark:text-white">요청 정보</h2>
                     <dl class="mt-4 divide-y divide-zinc-200 text-sm dark:divide-zinc-700/80">
@@ -98,6 +135,14 @@
                         <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">희망 완료일</dt><dd class="mt-1 font-mono text-zinc-800 dark:text-zinc-200">{{ $workRequest->desired_due_date?->format('Y.m.d') ?? '미지정' }}</dd></div>
                         <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">접수 경로</dt><dd class="mt-1 text-zinc-800 dark:text-zinc-200">{{ $workRequest->intake_channel->label() }}</dd></div>
                         <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">실제 요청 일시</dt><dd class="mt-1 font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ $workRequest->requested_at->format('Y.m.d H:i') }}</dd></div>
+                        @if ($responseTargetAt)
+                            <div class="py-3" data-test="major-incident-response-record"><dt class="text-xs text-zinc-500 dark:text-zinc-400">내부 최초 응답 목표</dt><dd class="mt-1 font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ $responseTargetAt->format('Y.m.d H:i') }}</dd></div>
+                            <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">내부 목표 상태</dt><dd class="mt-1 text-xs font-semibold {{ $responseStatusClass }}">{{ $responseStatus?->label() }}</dd></div>
+                            <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">응답시간 약정</dt><dd class="mt-1 text-xs text-zinc-800 dark:text-zinc-200">자동 약정 없음</dd><dd class="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">계약 문서의 별도 약정은 Desk가 자동 해석하지 않습니다.</dd></div>
+                            @if ($workRequest->firstResponseEvent)
+                                <div class="py-3"><dt class="text-xs text-zinc-500 dark:text-zinc-400">실제 최초 응답</dt><dd class="mt-1 font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ $workRequest->firstResponseEvent->occurred_at->format('Y.m.d H:i') }}</dd></div>
+                            @endif
+                        @endif
                         <div class="py-3 pb-0"><dt class="text-xs text-zinc-500 dark:text-zinc-400">시스템 등록 일시</dt><dd class="mt-1 font-mono text-xs text-zinc-800 dark:text-zinc-200">{{ $workRequest->registered_at->format('Y.m.d H:i') }}</dd></div>
                     </dl>
                 </section>
