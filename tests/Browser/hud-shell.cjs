@@ -43,13 +43,20 @@ const report = { pages: [], errors: [], failedResponses: [], failedRequests: [],
         const dimensions = await page.evaluate(() => {
             const header = document.querySelector('[data-test=desk-header]').getBoundingClientRect();
             const sidebar = document.querySelector('[data-test=desk-sidebar]').getBoundingClientRect();
+            const mainElement = document.querySelector('#desk-main');
+            const main = mainElement.getBoundingClientRect();
+            const pageContainer = mainElement.firstElementChild;
+            const mainPaddingLeft = Number.parseFloat(getComputedStyle(mainElement).paddingLeft);
             return { headerHeight: header.height, headerX: header.x, sidebarWidth: sidebar.width,
-                overflow: document.documentElement.scrollWidth - innerWidth, mainPadding: getComputedStyle(document.querySelector('#desk-main')).padding,
+                overflow: document.documentElement.scrollWidth - innerWidth, mainPadding: getComputedStyle(mainElement).padding,
+                pageLeftAligned: !pageContainer.classList.contains('mx-auto')
+                    || Math.abs(pageContainer.getBoundingClientRect().left - (main.left + mainPaddingLeft)) < 1,
                 background: getComputedStyle(document.body).backgroundColor, headerBackground: getComputedStyle(document.querySelector('[data-test=desk-header]')).backgroundColor };
         });
         assert.equal(dimensions.headerHeight, 64, path);
         assert.equal(dimensions.headerX, width >= 1024 ? 256 : 0, path);
         assert.equal(dimensions.overflow, 0, `${path}: overflow at ${width}`);
+        assert.equal(dimensions.pageLeftAligned, true, `${path}: main content is not left aligned at ${width}`);
         assert.equal(dimensions.background, theme === 'dark' ? 'rgb(14, 23, 38)' : 'rgb(240, 242, 245)');
         await page.screenshot({ path: `${out}/${report.pages.length}-${width}-${theme}.png`, fullPage: true });
         report.pages.push({ path, width, theme, ...dimensions });
@@ -88,6 +95,7 @@ const report = { pages: [], errors: [], failedResponses: [], failedRequests: [],
                 for (const path of paths) await audit(path, width, theme);
             }
         }
+        await audit('/dashboard', 1920, 'dark');
         await audit('/dashboard', 1440, 'dark');
         // Start keyboard traversal at a fresh document, not the theme button used by audit().
         await page.goto(`${base}/dashboard`);

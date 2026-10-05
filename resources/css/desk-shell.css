@@ -34,6 +34,7 @@
 .desk-avatar { width: 32px; height: 32px; border-radius: 50%; font-size: 12px; font-weight: 600; }
 .desk-popover, .desk-user-menu { width: min(320px, calc(100vw - 32px)); background: var(--desk-surface) !important; color: var(--desk-text) !important; border-color: var(--desk-border) !important; }
 .desk-main { min-width: 0; padding: 24px; }
+.desk-main > .mx-auto { margin-left: 0; margin-right: auto; }
 .desk-skip { position: fixed; top: -100px; left: 12px; z-index: 100; padding: 12px; background: var(--desk-surface); }
 .desk-skip:focus { top: 8px; }
 .desk-backdrop { position: fixed; inset: 0; z-index: 45; background: rgb(0 0 0 / .5); }
